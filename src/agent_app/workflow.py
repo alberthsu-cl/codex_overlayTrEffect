@@ -180,12 +180,20 @@ def benchmark_effects(
         raise ValueError("a candidate family is required through --family or planner_hints")
 
     catalog = modules["build_effect_catalog"](workspace_root)
-    candidates = [
-        effect
-        for effect in catalog.get("effects", [])
-        if effect.get("effect_source") == "builtin"
-        and effect.get("family") == selected_family
-    ]
+    candidates_by_fx_id: dict[str, dict[str, Any]] = {}
+    aliases_by_fx_id: dict[str, list[str]] = {}
+    for effect in catalog.get("effects", []):
+        if effect.get("effect_source") != "builtin" or effect.get("family") != selected_family:
+            continue
+        effect_id = effect.get("fx_id")
+        if not isinstance(effect_id, str) or not effect_id:
+            continue
+        if effect_id not in candidates_by_fx_id:
+            candidates_by_fx_id[effect_id] = effect
+            aliases_by_fx_id[effect_id] = []
+        else:
+            aliases_by_fx_id[effect_id].append(str(effect.get("effect_id")))
+    candidates = list(candidates_by_fx_id.values())
     if not candidates:
         raise ValueError(f"no built-in effects found for family: {selected_family}")
 
@@ -231,6 +239,7 @@ def benchmark_effects(
         candidate_result: dict[str, Any] = {
             "effect_id": candidate.get("effect_id"),
             "fx_id": effect_id,
+            "catalog_aliases": aliases_by_fx_id.get(effect_id, []),
             "render": render_result,
         }
         if render_result.get("status") == "succeeded":
