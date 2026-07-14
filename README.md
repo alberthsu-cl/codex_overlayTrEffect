@@ -98,6 +98,16 @@ py -3 agent/src/main.py prepare-sources `
 py -3 agent/src/main.py retrieve `
   --analysis agent/examples/sample_glitch.transition_analysis.json `
   --output agent/work/sample_glitch_retrieval.json
+
+py -3 agent/src/main.py benchmark `
+  --analysis agent/examples/sample_glitch.transition_analysis.json `
+  --source-a agent/work/glitch_sources/source_a `
+  --source-b agent/work/glitch_sources/source_b `
+  --reference-transition agent/work/glitch_benchmark/reference `
+  --output-root agent/work/glitch_benchmark `
+  --output agent/work/glitch_benchmark/benchmark_report.json `
+  --family glitch `
+  --ffmpeg C:/Users/albert_hsu.CLT/AppData/Local/miniconda3/envs/harness/Library/bin/ffmpeg.exe
 ```
 
 The `render` command accepts the existing harness render-job JSON contract. A
@@ -149,6 +159,12 @@ analysis artifact, repeats them into equal-length frame sequences, and writes
 `retrieve` queries the existing `harness` effect catalog using the analysis
 artifact's recommended family. Retrieval reports the selected built-in effect,
 match kind, source documents, and whether the requested FX ID matched exactly.
+
+`benchmark` evaluates every built-in catalog entry in a family against the same
+reference. Its ranked report is evidence for retrieval and tuning decisions;
+it does not change the selected effect automatically. Multiple catalog records
+may refer to the same runtime FX ID, so both the catalog effect ID and resolved
+FX ID are retained in the report.
 
 `build-job` currently supports `reuse_existing_effect` and
 `tune_existing_effect`. The design artifact must provide either

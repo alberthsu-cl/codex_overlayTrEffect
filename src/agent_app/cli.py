@@ -7,6 +7,7 @@ from pathlib import Path
 from .workflow import (
     build_job_from_artifacts,
     build_report,
+    benchmark_effects,
     prepare_reference,
     prepare_sources,
     retrieve_effect,
@@ -48,6 +49,23 @@ def main(argv: list[str] | None = None) -> int:
                 workspace_root=workspace_root,
                 analysis_file=Path(args.analysis).resolve(),
                 output_file=Path(args.output).resolve(),
+            )
+        elif args.command == "benchmark":
+            result = benchmark_effects(
+                workspace_root=workspace_root,
+                analysis_file=Path(args.analysis).resolve(),
+                source_a=args.source_a,
+                source_b=args.source_b,
+                reference_transition=Path(args.reference_transition).resolve(),
+                output_root=Path(args.output_root).resolve(),
+                output_file=Path(args.output).resolve(),
+                family=args.family,
+                width=args.width,
+                height=args.height,
+                fps=args.fps,
+                frame_count=args.frame_count,
+                renderer=args.renderer or _default_renderer(workspace_root),
+                ffmpeg_path=args.ffmpeg,
             )
         elif args.command == "render":
             renderer = args.renderer or _default_renderer(workspace_root)
@@ -135,6 +153,24 @@ def build_parser() -> argparse.ArgumentParser:
     )
     retrieve_cmd.add_argument("--analysis", required=True)
     retrieve_cmd.add_argument("--output", required=True)
+
+    benchmark_cmd = subparsers.add_parser(
+        "benchmark",
+        help="render and score every built-in effect in an effect family",
+    )
+    benchmark_cmd.add_argument("--analysis", required=True)
+    benchmark_cmd.add_argument("--source-a", required=True)
+    benchmark_cmd.add_argument("--source-b", required=True)
+    benchmark_cmd.add_argument("--reference-transition", required=True)
+    benchmark_cmd.add_argument("--output-root", required=True)
+    benchmark_cmd.add_argument("--output", required=True)
+    benchmark_cmd.add_argument("--family")
+    benchmark_cmd.add_argument("--width", type=int, default=1920)
+    benchmark_cmd.add_argument("--height", type=int, default=1080)
+    benchmark_cmd.add_argument("--fps", type=int, default=30)
+    benchmark_cmd.add_argument("--frame-count", type=int, default=30)
+    benchmark_cmd.add_argument("--renderer")
+    benchmark_cmd.add_argument("--ffmpeg")
 
     render = subparsers.add_parser("render", help="render a JSON job with the existing headless renderer")
     render.add_argument("--job", required=True)

@@ -156,6 +156,119 @@ def retrieve_effect(
     return result
 
 
+def benchmark_effects(
+    workspace_root: Path,
+    analysis_file: Path,
+    source_a: str,
+    source_b: str,
+    reference_transition: Path,
+    output_root: Path,
+    output_file: Path,
+    family: str | None,
+    width: int,
+    height: int,
+    fps: int,
+    frame_count: int,
+    renderer: str | None,
+    ffmpeg_path: str | None,
+) -> dict[str, Any]:
+    modules = load_harness_modules(workspace_root)
+    analysis = load_json(analysis_file)
+    planner_hints = analysis.get("planner_hints", {})
+    selected_family = family or planner_hints.get("recommended_effect_family")
+    if not isinstance(selected_family, str) or not selected_family:
+        raise ValueError("a candidate family is required through --family or planner_hints")
+
+    catalog = modules["build_effect_catalog"](workspace_root)
+    candidates = [
+        effect
+        for effect in catalog.get("effects", [])
+        if effect.get("effect_source") == "builtin"
+        and effect.get("family") == selected_family
+    ]
+    if not candidates:
+        raise ValueError(f"no built-in effects found for family: {selected_family}")
+
+    results: list[dict[str, Any]] = []
+    for candidate in candidates:
+        effect_id = candidate.get("fx_id")
+        if not isinstance(effect_id, str) or not effect_id:
+            continue
+        job = {
+            "job_name": f"agent_benchmark_{candidate['effect_id']}",
+            "effect": {
+                "fx_id": effect_id,
+                "category": candidate.get("family", "unknown"),
+                "effect_spec": None,
+                "uniforms": {"progress": 0.0},
+            },
+            "inputs": {
+                "source_a": source_a,
+                "source_b": source_b,
+                "reference_transition": str(reference_transition),
+            },
+            "render": {
+                "width": width,
+                "height": height,
+                "fps": fps,
+                "frame_count": frame_count,
+                "output_format": "png_sequence",
+            },
+            "planning": {
+                "source": "agent_catalog_benchmark",
+                "family": selected_family,
+                "catalog_effect_id": candidate.get("effect_id"),
+            },
+        }
+        job_file = output_root / "jobs" / f"{candidate['effect_id']}.json"
+        write_json(job_file, job)
+        render_result = render_job(
+            workspace_root=workspace_root,
+            job_file=job_file,
+            output_root=output_root / "runs",
+            renderer=renderer,
+        )
+        candidate_result: dict[str, Any] = {
+            "effect_id": candidate.get("effect_id"),
+            "fx_id": effect_id,
+            "render": render_result,
+        }
+        if render_result.get("status") == "succeeded":
+            run_root = Path(render_result["workspace"])
+            score_file = run_root / "reports" / "score.json"
+            candidate_result["score"] = score_candidate(
+                workspace_root=workspace_root,
+                candidate=Path(render_result["artifacts_dir"]),
+                reference=reference_transition,
+                output_file=score_file,
+                width=width,
+                height=height,
+                frame_count=frame_count,
+                require_exact_frame_count=True,
+                ffmpeg_path=ffmpeg_path,
+            )
+        results.append(candidate_result)
+
+    ranked = sorted(
+        results,
+        key=lambda item: (
+            item.get("score", {}).get("mse", float("inf")),
+            -item.get("score", {}).get("ssim", -1.0),
+        ),
+    )
+    report = {
+        "report_type": "agent_effect_benchmark",
+        "report_version": 1,
+        "status": "succeeded",
+        "analysis": str(analysis_file),
+        "family": selected_family,
+        "candidate_count": len(results),
+        "ranked_candidates": ranked,
+    }
+    write_json(output_file, report)
+    return report
+
+
 def render_job(
     workspace_root: Path,
     job_file: Path,
