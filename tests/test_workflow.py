@@ -11,9 +11,109 @@ if str(AGENT_SRC) not in sys.path:
     sys.path.insert(0, str(AGENT_SRC))
 
 from agent_app.workflow import build_report, score_candidate
+from agent_app.artifacts import build_render_job
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_build_render_job_uses_existing_effect_design(self) -> None:
+        analysis = {
+            "artifact_type": "transition_structure",
+            "artifact_version": 1,
+            "input_video": "sample.mp4",
+            "video_metadata": {"frame_count": 58},
+            "transition": {
+                "style_label": "seamless slide",
+                "summary": "Source A slides away while source B enters.",
+                "start_frame": 10,
+                "end_frame": 45,
+                "confidence": 0.9,
+            },
+            "visual_signals": {
+                "cross_dissolve": False,
+                "identity_morph": False,
+                "scene_blend": False,
+                "motion_smoothing": True,
+                "lighting_continuity": True,
+            },
+            "frame_progress_mapping": [],
+            "evidence": ["The image moves horizontally across the frame."],
+            "limitations": [],
+            "planner_hints": {"recommended_effect_family": "seamless_slide"},
+        }
+        design = {
+            "artifact_type": "effect_design",
+            "artifact_version": 1,
+            "analysis_artifact": "analysis.json",
+            "decision": {
+                "action": "reuse_existing_effect",
+                "confidence": 0.8,
+                "reason": "The visible movement matches the built-in sliding effect.",
+            },
+            "target_effect": {
+                "family": "seamless_slide",
+                "effect_id": "CES_PlugIn_Seamless.dll\\DSP_TR_SeamlessSliding_LC",
+                "expected_runtime_shape": "single_pass_fullscreen",
+            },
+            "design_notes": {
+                "must_preserve": ["horizontal movement"],
+                "approximations": [],
+                "risks": [],
+            },
+        }
+
+        job = build_render_job(
+            analysis=analysis,
+            design=design,
+            source_a="source_a",
+            source_b="source_b",
+            reference_transition="reference_transition",
+            width=1920,
+            height=1080,
+            fps=30,
+            frame_count=30,
+        )
+
+        self.assertEqual(job["effect"]["fx_id"], design["target_effect"]["effect_id"])
+        self.assertEqual(job["inputs"]["reference_transition"], "reference_transition")
+        self.assertEqual(job["planning"]["decision"], "reuse_existing_effect")
+
+    def test_build_render_job_rejects_new_effect_until_codegen_is_enabled(self) -> None:
+        analysis = {
+            "artifact_type": "transition_structure",
+            "artifact_version": 1,
+            "input_video": "sample.mp4",
+            "video_metadata": {"frame_count": 2},
+            "transition": {
+                "style_label": "unknown",
+                "summary": "Unknown effect.",
+                "start_frame": 0,
+                "end_frame": 1,
+                "confidence": 0.2,
+            },
+            "visual_signals": {
+                "cross_dissolve": False,
+                "identity_morph": False,
+                "scene_blend": False,
+                "motion_smoothing": False,
+                "lighting_continuity": False,
+            },
+            "frame_progress_mapping": [],
+            "evidence": [],
+            "limitations": [],
+            "planner_hints": {"recommended_effect_family": "unknown"},
+        }
+        design = {
+            "artifact_type": "effect_design",
+            "artifact_version": 1,
+            "analysis_artifact": "analysis.json",
+            "decision": {"action": "implement_new_effect", "confidence": 0.7},
+            "target_effect": {"family": "unknown"},
+            "design_notes": {"must_preserve": [], "approximations": [], "risks": []},
+        }
+
+        with self.assertRaisesRegex(ValueError, "code generation is not enabled"):
+            build_render_job(analysis, design, "source_a", "source_b", None, 16, 16, 30, 2)
+
     def test_score_candidate_writes_frame_and_aggregate_metrics(self) -> None:
         fake_score = type(
             "FakeScore",
@@ -71,4 +171,3 @@ class WorkflowTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

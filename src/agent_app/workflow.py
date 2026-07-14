@@ -6,6 +6,7 @@ from typing import Any
 
 from .harness_bridge import load_harness_modules
 from .io import load_json, write_json
+from .artifacts import build_render_job
 
 
 def prepare_reference(
@@ -136,3 +137,29 @@ def build_report(
     write_json(output_file, report)
     return report
 
+
+def build_job_from_artifacts(
+    analysis_file: Path,
+    design_file: Path,
+    source_a: str,
+    source_b: str,
+    reference_transition: str | None,
+    output_file: Path,
+    width: int,
+    height: int,
+    fps: int,
+    frame_count: int,
+) -> dict[str, Any]:
+    job = build_render_job(
+        analysis=load_json(analysis_file),
+        design=load_json(design_file),
+        source_a=source_a,
+        source_b=source_b,
+        reference_transition=reference_transition,
+        width=width,
+        height=height,
+        fps=fps,
+        frame_count=frame_count,
+    )
+    write_json(output_file, job)
+    return job

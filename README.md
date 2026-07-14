@@ -91,13 +91,21 @@ py -3 agent/src/main.py prepare `
 
 The `render` command accepts the existing harness render-job JSON contract. A
 Codex-produced `effect_design.json` is kept alongside the job and is consumed
-by the later report step; it is not silently converted into a deterministic
-planner decision.
+by `build-job` and the later report step; it is not silently converted into a
+deterministic planner decision.
 
 ```powershell
 py -3 agent/src/main.py render `
   --job harness/examples/render_job.sample.json `
   --output-root agent/work
+
+py -3 agent/src/main.py build-job `
+  --analysis agent/artifacts/transition_analysis.json `
+  --design agent/artifacts/effect_design.json `
+  --source-a harness/examples/inputs/source_a_clean `
+  --source-b harness/examples/inputs/source_b_clean `
+  --reference-transition agent/work/reference_transition `
+  --output agent/work/agent_render_job.json
 
 py -3 agent/src/main.py score `
   --candidate agent/work/<run>/artifacts `
@@ -117,6 +125,13 @@ The native renderer is optional for the first setup check. Without a renderer,
 `render` records the request and returns `blocked`; with a built renderer it
 produces candidate PNG frames. Non-BMP preparation and scoring require
 `ffmpeg`.
+
+`build-job` currently supports `reuse_existing_effect` and
+`tune_existing_effect`. The design artifact must provide either
+`target_effect.effect_id` or `target_effect.closest_existing_effect_id`.
+`implement_new_effect` is rejected intentionally; generated C++/HLSL will be
+added only after the existing-effect path provides a reliable compile, render,
+and regression baseline.
 
 ## Related Projects
 

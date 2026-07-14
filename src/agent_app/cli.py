@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
-from .workflow import build_report, prepare_reference, render_job, score_candidate
+from .workflow import build_job_from_artifacts, build_report, prepare_reference, render_job, score_candidate
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -44,6 +44,20 @@ def main(argv: list[str] | None = None) -> int:
                 require_exact_frame_count=args.require_exact_frame_count,
                 ffmpeg_path=args.ffmpeg,
             )
+        elif args.command == "build-job":
+            result = build_job_from_artifacts(
+                analysis_file=Path(args.analysis).resolve(),
+                design_file=Path(args.design).resolve(),
+                source_a=args.source_a,
+                source_b=args.source_b,
+                reference_transition=args.reference_transition,
+                output_file=Path(args.output).resolve(),
+                width=args.width,
+                height=args.height,
+                fps=args.fps,
+                frame_count=args.frame_count,
+            )
+            result = {"status": "succeeded", "job": result, "output": str(Path(args.output).resolve())}
         else:
             result = build_report(
                 analysis_file=Path(args.analysis).resolve(),
@@ -91,6 +105,21 @@ def build_parser() -> argparse.ArgumentParser:
     score.add_argument("--frame-count", type=int)
     score.add_argument("--require-exact-frame-count", action="store_true")
     score.add_argument("--ffmpeg")
+
+    build_job = subparsers.add_parser(
+        "build-job",
+        help="build an existing-effect render job from Codex analysis and design artifacts",
+    )
+    build_job.add_argument("--analysis", required=True)
+    build_job.add_argument("--design", required=True)
+    build_job.add_argument("--source-a", required=True)
+    build_job.add_argument("--source-b", required=True)
+    build_job.add_argument("--reference-transition")
+    build_job.add_argument("--output", required=True)
+    build_job.add_argument("--width", type=int, default=1920)
+    build_job.add_argument("--height", type=int, default=1080)
+    build_job.add_argument("--fps", type=int, default=30)
+    build_job.add_argument("--frame-count", type=int, default=30)
 
     report = subparsers.add_parser("report", help="combine analysis, design, render, and score artifacts")
     report.add_argument("--analysis", required=True)
