@@ -119,7 +119,11 @@ def build_parser() -> argparse.ArgumentParser:
     build_job.add_argument("--width", type=int, default=1920)
     build_job.add_argument("--height", type=int, default=1080)
     build_job.add_argument("--fps", type=int, default=30)
-    build_job.add_argument("--frame-count", type=int, default=30)
+    build_job.add_argument(
+        "--frame-count",
+        type=int,
+        help="override the render frame count; otherwise use the reference manifest, then 30",
+    )
 
     report = subparsers.add_parser("report", help="combine analysis, design, render, and score artifacts")
     report.add_argument("--analysis", required=True)

@@ -148,8 +148,9 @@ def build_job_from_artifacts(
     width: int,
     height: int,
     fps: int,
-    frame_count: int,
+    frame_count: int | None,
 ) -> dict[str, Any]:
+    resolved_frame_count = frame_count or _reference_frame_count(reference_transition) or 30
     job = build_render_job(
         analysis=load_json(analysis_file),
         design=load_json(design_file),
@@ -159,7 +160,23 @@ def build_job_from_artifacts(
         width=width,
         height=height,
         fps=fps,
-        frame_count=frame_count,
+        frame_count=resolved_frame_count,
     )
     write_json(output_file, job)
     return job
+
+
+def _reference_frame_count(reference_transition: str | None) -> int | None:
+    if not reference_transition:
+        return None
+    reference_path = Path(reference_transition)
+    manifest_path = (
+        reference_path / "reference_transition_manifest.json"
+        if reference_path.is_dir()
+        else reference_path
+    )
+    if not manifest_path.exists():
+        return None
+    manifest = load_json(manifest_path)
+    frame_count = manifest.get("frame_count")
+    return frame_count if isinstance(frame_count, int) and frame_count >= 2 else None

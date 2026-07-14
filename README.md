@@ -121,6 +121,11 @@ py -3 agent/src/main.py report `
   --output agent/work/<run>/reports/regression_report.json
 ```
 
+When `--frame-count` is omitted, `build-job` reads
+`reference_transition_manifest.json` and uses its normalized frame count. It
+falls back to 30 only when no reference manifest is available. This keeps the
+candidate render aligned with the prepared reference sequence.
+
 The native renderer is optional for the first setup check. Without a renderer,
 `render` records the request and returns `blocked`; with a built renderer it
 produces candidate PNG frames. Non-BMP preparation and scoring require
