@@ -114,6 +114,48 @@ def prepare_sources(
     }
 
 
+def retrieve_effect(
+    workspace_root: Path,
+    analysis_file: Path,
+    output_file: Path,
+) -> dict[str, Any]:
+    modules = load_harness_modules(workspace_root)
+    analysis = load_json(analysis_file)
+    planner_hints = analysis.get("planner_hints")
+    if not isinstance(planner_hints, dict):
+        raise ValueError("analysis artifact is missing planner_hints")
+    family = planner_hints.get("recommended_effect_family")
+    if not isinstance(family, str) or not family:
+        raise ValueError("analysis planner_hints.recommended_effect_family is required")
+
+    catalog = modules["build_effect_catalog"](workspace_root)
+    selected = modules["select_effect_candidate"](catalog, style=family, input_kind="real")
+    if selected is None:
+        result = {
+            "status": "not_found",
+            "analysis": str(analysis_file),
+            "requested_family": family,
+            "requested_effect_id": planner_hints.get("recommended_effect_id"),
+            "catalog_registration_count": catalog.get("registration_count"),
+        }
+    else:
+        requested_effect_id = planner_hints.get("recommended_effect_id")
+        result = {
+            "status": "retrieved",
+            "analysis": str(analysis_file),
+            "requested_family": family,
+            "requested_effect_id": requested_effect_id,
+            "selected": selected,
+            "exact_id_match": (
+                requested_effect_id is None
+                or selected.get("fx_id") == requested_effect_id
+                or selected.get("effect_id") == requested_effect_id
+            ),
+        }
+    write_json(output_file, result)
+    return result
+
+
 def render_job(
     workspace_root: Path,
     job_file: Path,

@@ -94,6 +94,10 @@ py -3 agent/src/main.py prepare-sources `
   --start-frame 0 `
   --end-frame 29 `
   --frame-count 30
+
+py -3 agent/src/main.py retrieve `
+  --analysis agent/examples/sample_glitch.transition_analysis.json `
+  --output agent/work/sample_glitch_retrieval.json
 ```
 
 The `render` command accepts the existing harness render-job JSON contract. A
@@ -141,6 +145,10 @@ produces candidate PNG frames. Non-BMP preparation and scoring require
 `prepare-sources` extracts the A and B stills at the boundaries supplied by the
 analysis artifact, repeats them into equal-length frame sequences, and writes
 `source_pair_manifest.json`. It does not guess transition boundaries itself.
+
+`retrieve` queries the existing `harness` effect catalog using the analysis
+artifact's recommended family. Retrieval reports the selected built-in effect,
+match kind, source documents, and whether the requested FX ID matched exactly.
 
 `build-job` currently supports `reuse_existing_effect` and
 `tune_existing_effect`. The design artifact must provide either

@@ -10,11 +10,41 @@ AGENT_SRC = Path(__file__).resolve().parents[1] / "src"
 if str(AGENT_SRC) not in sys.path:
     sys.path.insert(0, str(AGENT_SRC))
 
-from agent_app.workflow import build_report, prepare_sources, score_candidate
+from agent_app.workflow import build_report, prepare_sources, retrieve_effect, score_candidate
 from agent_app.artifacts import build_render_job
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_retrieve_effect_returns_catalog_match(self) -> None:
+        analysis = {
+            "planner_hints": {
+                "recommended_effect_family": "glitch",
+                "recommended_effect_id": "fx-glitch",
+            }
+        }
+        selected = {
+            "effect_id": "builtin-glitch",
+            "fx_id": "fx-glitch",
+            "match_kind": "exact",
+        }
+        fake_modules = {
+            "build_effect_catalog": lambda _: {"registration_count": 1},
+            "select_effect_candidate": lambda *_args, **_kwargs: selected,
+        }
+
+        with patch("agent_app.workflow.load_json", return_value=analysis):
+            with patch("agent_app.workflow.load_harness_modules", return_value=fake_modules):
+                with patch("agent_app.workflow.write_json") as write_json:
+                    result = retrieve_effect(
+                        workspace_root=Path("D:/AI_Harness"),
+                        analysis_file=Path("analysis.json"),
+                        output_file=Path("retrieval.json"),
+                    )
+
+        self.assertEqual(result["status"], "retrieved")
+        self.assertTrue(result["exact_id_match"])
+        write_json.assert_called_once()
+
     def test_prepare_sources_rejects_reversed_boundaries(self) -> None:
         with self.assertRaisesRegex(ValueError, "boundaries"):
             prepare_sources(

@@ -14,6 +14,8 @@ def load_harness_modules(workspace_root: Path):
         sys.path.insert(0, harness_src_text)
 
     from overlay_harness.evaluator import score_frame_sequences
+    from overlay_harness.effect_catalog import build_effect_catalog
+    from overlay_harness.effect_catalog import select_effect_candidate
     from overlay_harness.models import load_render_job
     from overlay_harness.renderer import prepare_render_invocation
     from overlay_harness.video_prep import prepare_reference_transition
@@ -25,5 +27,6 @@ def load_harness_modules(workspace_root: Path):
         "prepare_reference_transition": prepare_reference_transition,
         "prepare_render_invocation": prepare_render_invocation,
         "score_frame_sequences": score_frame_sequences,
+        "build_effect_catalog": build_effect_catalog,
+        "select_effect_candidate": select_effect_candidate,
     }
-

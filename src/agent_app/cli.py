@@ -9,6 +9,7 @@ from .workflow import (
     build_report,
     prepare_reference,
     prepare_sources,
+    retrieve_effect,
     render_job,
     score_candidate,
 )
@@ -41,6 +42,12 @@ def main(argv: list[str] | None = None) -> int:
                 width=args.width,
                 height=args.height,
                 ffmpeg_path=args.ffmpeg,
+            )
+        elif args.command == "retrieve":
+            result = retrieve_effect(
+                workspace_root=workspace_root,
+                analysis_file=Path(args.analysis).resolve(),
+                output_file=Path(args.output).resolve(),
             )
         elif args.command == "render":
             renderer = args.renderer or _default_renderer(workspace_root)
@@ -121,6 +128,13 @@ def build_parser() -> argparse.ArgumentParser:
     prepare_sources_cmd.add_argument("--width", type=int, default=1920)
     prepare_sources_cmd.add_argument("--height", type=int, default=1080)
     prepare_sources_cmd.add_argument("--ffmpeg")
+
+    retrieve_cmd = subparsers.add_parser(
+        "retrieve",
+        help="retrieve the closest built-in effect from the analysis family",
+    )
+    retrieve_cmd.add_argument("--analysis", required=True)
+    retrieve_cmd.add_argument("--output", required=True)
 
     render = subparsers.add_parser("render", help="render a JSON job with the existing headless renderer")
     render.add_argument("--job", required=True)
