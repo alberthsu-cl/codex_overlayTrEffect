@@ -1,0 +1,57 @@
+{
+  "artifact_type": "transition_structure",
+  "artifact_version": 1,
+  "input_video": "harness/examples/sample_glitch.mp4",
+  "video_metadata": {
+    "frame_count": 30,
+    "fps": 30,
+    "width": 1920,
+    "height": 1080
+  },
+  "transition": {
+    "style_label": "RGB glitch distortion",
+    "summary": "A food still is disrupted by horizontal tearing, color-channel separation, and noisy displacement before resolving into a canyon still.",
+    "start_frame": 0,
+    "end_frame": 29,
+    "confidence": 0.92
+  },
+  "visual_signals": {
+    "cross_dissolve": false,
+    "identity_morph": false,
+    "scene_blend": false,
+    "motion_smoothing": false,
+    "lighting_continuity": false,
+    "camera_continuity": false,
+    "masked_blend": false,
+    "uv_displacement": true,
+    "blur_or_softening": false,
+    "rgb_split": true,
+    "noise_or_grain": true,
+    "warmth_shift": false,
+    "bokeh_continuity": false
+  },
+  "frame_progress_mapping": [
+    {"frame_index": 0, "normalized_progress": 0.0, "phase": "pre"},
+    {"frame_index": 7, "normalized_progress": 0.24, "phase": "distortion", "notes": "Initial tearing and color displacement become visible."},
+    {"frame_index": 15, "normalized_progress": 0.52, "phase": "distortion", "notes": "Strong horizontal bands, RGB separation, and noisy spatial displacement dominate."},
+    {"frame_index": 22, "normalized_progress": 0.76, "phase": "settle", "notes": "The target canyon image becomes recognizable while residual distortion remains."},
+    {"frame_index": 29, "normalized_progress": 1.0, "phase": "end"}
+  ],
+  "evidence": [
+    "The midpoint contains broad horizontal tearing bands rather than a simple opacity blend.",
+    "Red, green, and blue channel offsets are visible around displaced image regions.",
+    "The final frame resolves to a canyon scene distinct from the initial food scene.",
+    "The effect appears to operate across the full frame and does not follow a clean geometric wipe boundary."
+  ],
+  "limitations": [
+    "The sample is already tightly trimmed around the transition, so the detector cannot establish a longer pre-roll or post-roll interval.",
+    "The source A/B stills are represented by the first and last normalized frames for this baseline run."
+  ],
+  "planner_hints": {
+    "recommended_effect_family": "glitch",
+    "recommended_effect_id": "CES_PlugIn_Glitch.dll\\DSP_TR_04_Bad Signal_4",
+    "new_effect_needed": false,
+    "implementation_notes": "Start with the existing resource-backed glitch effect and compare its distortion envelope against the reference.",
+    "fit_rationale": "The sample is dominated by RGB separation, horizontal tearing, noise, and UV-like displacement, which are closer to the existing glitch family than to dissolve, wipe, or slide."
+  }
+}

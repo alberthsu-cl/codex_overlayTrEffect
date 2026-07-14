@@ -1,0 +1,38 @@
+{
+  "artifact_type": "effect_design",
+  "artifact_version": 1,
+  "analysis_artifact": "agent/examples/sample_glitch.transition_analysis.json",
+  "decision": {
+    "action": "reuse_existing_effect",
+    "confidence": 0.84,
+    "reason": "The built-in Bad Signal glitch effect is the closest available runtime effect for RGB split, horizontal tearing, noise, and displacement."
+  },
+  "target_effect": {
+    "family": "glitch",
+    "effect_id": "CES_PlugIn_Glitch.dll\\DSP_TR_04_Bad Signal_4",
+    "closest_existing_effect_id": "CES_PlugIn_Glitch.dll\\DSP_TR_04_Bad Signal_4",
+    "expected_runtime_shape": "resource_backed"
+  },
+  "design_notes": {
+    "must_preserve": [
+      "full-frame horizontal tearing",
+      "visible RGB channel separation",
+      "strong mid-transition displacement",
+      "clean resolution into source B"
+    ],
+    "approximations": [
+      "The first baseline uses the built-in effect defaults without parameter fitting.",
+      "Source A and source B are endpoint stills repeated across the render sequence."
+    ],
+    "risks": [
+      "The built-in glitch timing and noise pattern may differ from the sample.",
+      "A resource-backed effect may not expose enough controls for later fitting."
+    ],
+    "suggested_controls": [
+      "progress",
+      "distortion amount",
+      "RGB offset",
+      "noise intensity"
+    ]
+  }
+}
