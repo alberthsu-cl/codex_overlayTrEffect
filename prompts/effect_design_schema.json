@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Agent Effect Design Artifact",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "artifact_type",
+    "artifact_version",
+    "analysis_artifact",
+    "decision",
+    "target_effect",
+    "design_notes"
+  ],
+  "properties": {
+    "artifact_type": {
+      "type": "string",
+      "const": "effect_design"
+    },
+    "artifact_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "analysis_artifact": {
+      "type": "string",
+      "description": "Path or identifier of the transition analysis artifact that this design decision is based on."
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "confidence"
+      ],
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "reuse_existing_effect",
+            "tune_existing_effect",
+            "implement_new_effect"
+          ]
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "target_effect": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "family"
+      ],
+      "properties": {
+        "family": {
+          "type": "string"
+        },
+        "effect_id": {
+          "type": "string"
+        },
+        "closest_existing_effect_id": {
+          "type": "string"
+        },
+        "expected_runtime_shape": {
+          "type": "string",
+          "enum": [
+            "single_pass_fullscreen",
+            "multi_pass",
+            "resource_backed",
+            "unknown"
+          ]
+        }
+      }
+    },
+    "design_notes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "must_preserve",
+        "approximations",
+        "risks"
+      ],
+      "properties": {
+        "must_preserve": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "approximations": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "risks": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "suggested_controls": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

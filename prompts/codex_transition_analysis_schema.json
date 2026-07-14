@@ -1,0 +1,213 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Agent Transition Analysis Artifact",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "artifact_type",
+    "artifact_version",
+    "input_video",
+    "video_metadata",
+    "transition",
+    "visual_signals",
+    "frame_progress_mapping",
+    "evidence",
+    "limitations",
+    "planner_hints"
+  ],
+  "properties": {
+    "artifact_type": {
+      "type": "string",
+      "const": "transition_structure"
+    },
+    "artifact_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "input_video": {
+      "type": "string",
+      "description": "Local path or logical identifier for the analyzed sample video."
+    },
+    "video_metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "frame_count"
+      ],
+      "properties": {
+        "frame_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fps": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "transition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "style_label",
+        "summary",
+        "start_frame",
+        "end_frame",
+        "confidence"
+      ],
+      "properties": {
+        "style_label": {
+          "type": "string",
+          "description": "Short label for the visible transition family."
+        },
+        "summary": {
+          "type": "string",
+          "description": "One-sentence description of the visible source-to-target transformation."
+        },
+        "start_frame": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "end_frame": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "visual_signals": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cross_dissolve",
+        "identity_morph",
+        "scene_blend",
+        "motion_smoothing",
+        "lighting_continuity"
+      ],
+      "properties": {
+          "cross_dissolve": {
+            "type": "boolean"
+          },
+        "identity_morph": {
+          "type": "boolean"
+        },
+        "scene_blend": {
+          "type": "boolean"
+        },
+        "motion_smoothing": {
+          "type": "boolean"
+        },
+        "lighting_continuity": {
+          "type": "boolean"
+        },
+        "camera_continuity": {
+          "type": "boolean"
+        },
+          "masked_blend": {
+            "type": "boolean"
+          },
+          "uv_displacement": {
+            "type": "boolean"
+          },
+          "blur_or_softening": {
+            "type": "boolean"
+          },
+          "rgb_split": {
+            "type": "boolean"
+          },
+          "noise_or_grain": {
+            "type": "boolean"
+          },
+          "warmth_shift": {
+            "type": "boolean"
+          },
+        "bokeh_continuity": {
+          "type": "boolean"
+        }
+      }
+    },
+    "frame_progress_mapping": {
+      "type": "array",
+      "description": "Frame-by-frame transition progression mapping in display order across the main transition window.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "frame_index",
+          "normalized_progress",
+          "phase"
+        ],
+        "properties": {
+          "frame_index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "normalized_progress": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "phase": {
+            "type": "string",
+            "description": "Human-readable phase label such as pre, blend, morph, distortion, settle, or end."
+          },
+          "notes": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "planner_hints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "recommended_effect_family"
+      ],
+      "properties": {
+        "recommended_effect_family": {
+          "type": "string",
+          "description": "Nearest downstream effect family label."
+        },
+        "recommended_effect_id": {
+          "type": "string",
+          "description": "Suggested existing Effect_ID when there is a strong match."
+        },
+        "new_effect_needed": {
+          "type": "boolean"
+        },
+        "implementation_notes": {
+          "type": "string"
+        },
+        "fit_rationale": {
+          "type": "string",
+          "description": "Short explanation of why the recommended family or effect ID fits the visible transition."
+        }
+      }
+    }
+  }
+}

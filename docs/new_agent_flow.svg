@@ -1,0 +1,115 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">Agent Two-Pass Flow</title>
+  <desc id="desc">A readable overview of the Codex transition analysis and local rendering and scoring workflow.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L12,6 L0,12 Z" fill="#233044"/>
+    </marker>
+    <style>
+      .bg { fill: #f7f8fa; }
+      .band { fill: #eef2f7; stroke: #d6dde8; stroke-width: 1; }
+      .box { fill: #ffffff; stroke: #233044; stroke-width: 2.5; rx: 12; ry: 12; }
+      .decision { fill: #fffaf0; stroke: #9a6700; stroke-width: 2.5; rx: 12; ry: 12; }
+      .output { fill: #f0fdf4; stroke: #237a45; stroke-width: 2.5; rx: 12; ry: 12; }
+      .title { font: 700 32px "Segoe UI", Arial, sans-serif; fill: #152238; }
+      .band-title { font: 700 22px "Segoe UI", Arial, sans-serif; fill: #34445b; }
+      .text { font: 20px "Segoe UI", Arial, sans-serif; fill: #172235; }
+      .small { font: 18px "Segoe UI", Arial, sans-serif; fill: #42526a; }
+      .caption { font: 600 18px "Segoe UI", Arial, sans-serif; fill: #42526a; }
+      .line { fill: none; stroke: #233044; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrow); }
+      .dash { fill: none; stroke: #718096; stroke-width: 2.5; stroke-dasharray: 9 7; stroke-linecap: round; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1600" height="900"/>
+  <text class="title" x="50" y="54">Agent Two-Pass Flow</text>
+  <text class="small" x="50" y="82">Codex interprets and designs the effect; local tools render, score, and report the result.</text>
+
+  <rect class="band" x="30" y="110" width="1540" height="230" rx="16"/>
+  <text class="band-title" x="55" y="145">Pass 1 · Understand the sample</text>
+
+  <rect class="box" x="55" y="180" width="210" height="105"/>
+  <text class="text" x="160" y="220" text-anchor="middle">Sample video</text>
+  <text class="text" x="160" y="248" text-anchor="middle">+ source A/B</text>
+
+  <rect class="box" x="305" y="180" width="210" height="105"/>
+  <text class="text" x="410" y="220" text-anchor="middle">Prepare /</text>
+  <text class="text" x="410" y="248" text-anchor="middle">normalize frames</text>
+
+  <rect class="box" x="555" y="180" width="210" height="105"/>
+  <text class="text" x="660" y="220" text-anchor="middle">Codex video</text>
+  <text class="text" x="660" y="248" text-anchor="middle">analysis</text>
+
+  <rect class="box" x="805" y="180" width="210" height="105"/>
+  <text class="text" x="910" y="220" text-anchor="middle">transition_</text>
+  <text class="text" x="910" y="248" text-anchor="middle">analysis.json</text>
+
+  <rect class="box" x="1055" y="180" width="210" height="105"/>
+  <text class="text" x="1160" y="220" text-anchor="middle">Codex effect</text>
+  <text class="text" x="1160" y="248" text-anchor="middle">decision</text>
+
+  <rect class="box" x="1305" y="180" width="210" height="105"/>
+  <text class="text" x="1410" y="220" text-anchor="middle">effect_</text>
+  <text class="text" x="1410" y="248" text-anchor="middle">design.json</text>
+
+  <path class="line" d="M265 232 H305"/>
+  <path class="line" d="M515 232 H555"/>
+  <path class="line" d="M765 232 H805"/>
+  <path class="line" d="M1015 232 H1055"/>
+  <path class="line" d="M1265 232 H1305"/>
+
+  <rect class="band" x="30" y="370" width="1540" height="210" rx="16"/>
+  <text class="band-title" x="55" y="405">Effect decision</text>
+
+  <rect class="decision" x="465" y="430" width="280" height="105"/>
+  <text class="text" x="605" y="470" text-anchor="middle">Reuse / tune</text>
+  <text class="text" x="605" y="498" text-anchor="middle">existing effect</text>
+
+  <rect class="decision" x="855" y="430" width="280" height="105"/>
+  <text class="text" x="995" y="470" text-anchor="middle">Implement</text>
+  <text class="text" x="995" y="498" text-anchor="middle">new effect</text>
+
+  <path class="line" d="M1410 285 V335 H605 V430"/>
+  <path class="line" d="M1410 285 V335 H995 V430"/>
+  <text class="caption" x="800" y="330" text-anchor="middle">Choose the smallest viable implementation</text>
+
+  <rect class="band" x="30" y="610" width="1540" height="245" rx="16"/>
+  <text class="band-title" x="55" y="645">Pass 2 · Render and regress</text>
+
+  <rect class="box" x="55" y="680" width="210" height="105"/>
+  <text class="text" x="160" y="720" text-anchor="middle">Render input</text>
+  <text class="small" x="160" y="750" text-anchor="middle">source A/B + design</text>
+
+  <rect class="box" x="305" y="680" width="210" height="105"/>
+  <text class="text" x="410" y="720" text-anchor="middle">Headless</text>
+  <text class="text" x="410" y="748" text-anchor="middle">renderer</text>
+
+  <rect class="box" x="555" y="680" width="210" height="105"/>
+  <text class="text" x="660" y="720" text-anchor="middle">Rendered candidate</text>
+  <text class="text" x="660" y="748" text-anchor="middle">frames</text>
+
+  <rect class="box" x="805" y="680" width="210" height="105"/>
+  <text class="text" x="910" y="720" text-anchor="middle">Algorithm</text>
+  <text class="text" x="910" y="748" text-anchor="middle">scoring</text>
+
+  <rect class="output" x="1055" y="680" width="210" height="105"/>
+  <text class="text" x="1160" y="720" text-anchor="middle">Regression</text>
+  <text class="text" x="1160" y="748" text-anchor="middle">report</text>
+
+  <rect class="output" x="1305" y="680" width="210" height="105"/>
+  <text class="text" x="1410" y="720" text-anchor="middle">Next iteration</text>
+  <text class="small" x="1410" y="750" text-anchor="middle">accept, tune, or retry</text>
+
+  <path class="line" d="M605 535 V625 H160 V680"/>
+  <path class="line" d="M995 535 V625 H160 V680"/>
+  <path class="line" d="M265 732 H305"/>
+  <path class="line" d="M515 732 H555"/>
+  <path class="line" d="M765 732 H805"/>
+  <path class="line" d="M1015 732 H1055"/>
+  <path class="line" d="M1265 732 H1305"/>
+
+  <path class="dash" d="M910 680 V590 H1160 V535"/>
+  <text class="caption" x="1160" y="580" text-anchor="middle">Future: agent-assisted scoring</text>
+
+  <text class="caption" x="55" y="835">Deterministic local responsibilities: frame preparation, rendering, scoring, and reports.</text>
+</svg>
