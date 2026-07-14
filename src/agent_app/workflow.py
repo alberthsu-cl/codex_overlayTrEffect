@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
+import shutil
+import subprocess
 from typing import Any
 
 from .harness_bridge import load_harness_modules
@@ -38,6 +40,77 @@ def prepare_reference(
         "detected_start_frame": result.detected_start_frame,
         "detected_end_frame": result.detected_end_frame,
         "detected_frame_count": result.detected_frame_count,
+    }
+
+
+def prepare_sources(
+    source_video: Path,
+    output_root: Path,
+    start_frame: int,
+    end_frame: int,
+    frame_count: int,
+    width: int,
+    height: int,
+    ffmpeg_path: str | None = None,
+) -> dict[str, Any]:
+    if start_frame < 0 or end_frame < 0 or end_frame < start_frame:
+        raise ValueError("source frame boundaries must be non-negative and ordered")
+    if frame_count < 2:
+        raise ValueError("frame_count must be at least 2")
+    if not source_video.exists():
+        raise FileNotFoundError(f"source video does not exist: {source_video}")
+
+    ffmpeg_executable = ffmpeg_path or shutil.which("ffmpeg")
+    if not ffmpeg_executable:
+        raise RuntimeError("ffmpeg is required for source preparation but was not found on PATH")
+
+    output_root.mkdir(parents=True, exist_ok=True)
+    source_a_dir = output_root / "source_a"
+    source_b_dir = output_root / "source_b"
+    source_a_dir.mkdir(parents=True, exist_ok=True)
+    source_b_dir.mkdir(parents=True, exist_ok=True)
+    _clear_png_frames(source_a_dir)
+    _clear_png_frames(source_b_dir)
+
+    source_a_frame = output_root / "source_a_frame.png"
+    source_b_frame = output_root / "source_b_frame.png"
+    _extract_single_frame(
+        ffmpeg_executable, source_video, start_frame, source_a_frame, width, height
+    )
+    _extract_single_frame(
+        ffmpeg_executable, source_video, end_frame, source_b_frame, width, height
+    )
+    for index in range(frame_count):
+        shutil.copyfile(source_a_frame, source_a_dir / f"frame_{index:04d}.png")
+        shutil.copyfile(source_b_frame, source_b_dir / f"frame_{index:04d}.png")
+
+    manifest = {
+        "artifact_type": "source_pair",
+        "artifact_version": 1,
+        "source_video": str(source_video),
+        "fps_assumption": "source frame indexes refer to normalized video frames",
+        "width": width,
+        "height": height,
+        "frame_count": frame_count,
+        "source_a_frame": start_frame,
+        "source_b_frame": end_frame,
+        "source_a": str(source_a_dir),
+        "source_b": str(source_b_dir),
+        "ffmpeg": ffmpeg_executable,
+    }
+    manifest_file = output_root / "source_pair_manifest.json"
+    write_json(manifest_file, manifest)
+    source_a_frame.unlink(missing_ok=True)
+    source_b_frame.unlink(missing_ok=True)
+    return {
+        "status": "succeeded",
+        "output_root": str(output_root),
+        "manifest_file": str(manifest_file),
+        "source_a": str(source_a_dir),
+        "source_b": str(source_b_dir),
+        "frame_count": frame_count,
+        "source_a_frame": start_frame,
+        "source_b_frame": end_frame,
     }
 
 
@@ -180,3 +253,42 @@ def _reference_frame_count(reference_transition: str | None) -> int | None:
     manifest = load_json(manifest_path)
     frame_count = manifest.get("frame_count")
     return frame_count if isinstance(frame_count, int) and frame_count >= 2 else None
+
+
+def _extract_single_frame(
+    ffmpeg_executable: str,
+    source_video: Path,
+    frame_index: int,
+    output_file: Path,
+    width: int,
+    height: int,
+) -> None:
+    completed = subprocess.run(
+        [
+            ffmpeg_executable,
+            "-v",
+            "error",
+            "-y",
+            "-i",
+            str(source_video),
+            "-vf",
+            f"select='eq(n\\,{frame_index})',scale={width}:{height}",
+            "-frames:v",
+            "1",
+            str(output_file),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(
+            f"ffmpeg failed to extract source frame {frame_index}: {completed.stderr.strip()}"
+        )
+    if not output_file.exists():
+        raise RuntimeError(f"ffmpeg produced no frame for source index {frame_index}")
+
+
+def _clear_png_frames(directory: Path) -> None:
+    for path in directory.glob("frame_*.png"):
+        path.unlink()

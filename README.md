@@ -87,6 +87,13 @@ py -3 agent/src/main.py prepare `
   --source-video harness/examples/sample_glitch.mp4 `
   --output-dir agent/work/reference_transition `
   --target-frame-count 30
+
+py -3 agent/src/main.py prepare-sources `
+  --source-video harness/examples/sample_glitch.mp4 `
+  --output-root agent/work/glitch_sources `
+  --start-frame 0 `
+  --end-frame 29 `
+  --frame-count 30
 ```
 
 The `render` command accepts the existing harness render-job JSON contract. A
@@ -130,6 +137,10 @@ The native renderer is optional for the first setup check. Without a renderer,
 `render` records the request and returns `blocked`; with a built renderer it
 produces candidate PNG frames. Non-BMP preparation and scoring require
 `ffmpeg`.
+
+`prepare-sources` extracts the A and B stills at the boundaries supplied by the
+analysis artifact, repeats them into equal-length frame sequences, and writes
+`source_pair_manifest.json`. It does not guess transition boundaries itself.
 
 `build-job` currently supports `reuse_existing_effect` and
 `tune_existing_effect`. The design artifact must provide either

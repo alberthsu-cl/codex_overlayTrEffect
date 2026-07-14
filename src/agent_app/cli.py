@@ -4,7 +4,14 @@ import argparse
 import json
 from pathlib import Path
 
-from .workflow import build_job_from_artifacts, build_report, prepare_reference, render_job, score_candidate
+from .workflow import (
+    build_job_from_artifacts,
+    build_report,
+    prepare_reference,
+    prepare_sources,
+    render_job,
+    score_candidate,
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -22,6 +29,17 @@ def main(argv: list[str] | None = None) -> int:
                 width=args.width,
                 height=args.height,
                 target_frame_count=args.target_frame_count,
+                ffmpeg_path=args.ffmpeg,
+            )
+        elif args.command == "prepare-sources":
+            result = prepare_sources(
+                source_video=Path(args.source_video).resolve(),
+                output_root=Path(args.output_root).resolve(),
+                start_frame=args.start_frame,
+                end_frame=args.end_frame,
+                frame_count=args.frame_count,
+                width=args.width,
+                height=args.height,
                 ffmpeg_path=args.ffmpeg,
             )
         elif args.command == "render":
@@ -90,6 +108,19 @@ def build_parser() -> argparse.ArgumentParser:
     prepare.add_argument("--fps", type=int, default=30)
     prepare.add_argument("--target-frame-count", type=int, default=30)
     prepare.add_argument("--ffmpeg")
+
+    prepare_sources_cmd = subparsers.add_parser(
+        "prepare-sources",
+        help="extract source A/B frames from the analysis boundaries and repeat them",
+    )
+    prepare_sources_cmd.add_argument("--source-video", required=True)
+    prepare_sources_cmd.add_argument("--output-root", required=True)
+    prepare_sources_cmd.add_argument("--start-frame", type=int, required=True)
+    prepare_sources_cmd.add_argument("--end-frame", type=int, required=True)
+    prepare_sources_cmd.add_argument("--frame-count", type=int, default=30)
+    prepare_sources_cmd.add_argument("--width", type=int, default=1920)
+    prepare_sources_cmd.add_argument("--height", type=int, default=1080)
+    prepare_sources_cmd.add_argument("--ffmpeg")
 
     render = subparsers.add_parser("render", help="render a JSON job with the existing headless renderer")
     render.add_argument("--job", required=True)

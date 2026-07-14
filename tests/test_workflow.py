@@ -10,11 +10,23 @@ AGENT_SRC = Path(__file__).resolve().parents[1] / "src"
 if str(AGENT_SRC) not in sys.path:
     sys.path.insert(0, str(AGENT_SRC))
 
-from agent_app.workflow import build_report, score_candidate
+from agent_app.workflow import build_report, prepare_sources, score_candidate
 from agent_app.artifacts import build_render_job
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_prepare_sources_rejects_reversed_boundaries(self) -> None:
+        with self.assertRaisesRegex(ValueError, "boundaries"):
+            prepare_sources(
+                source_video=Path("missing.mp4"),
+                output_root=Path("output"),
+                start_frame=10,
+                end_frame=9,
+                frame_count=30,
+                width=16,
+                height=16,
+            )
+
     def test_build_render_job_uses_existing_effect_design(self) -> None:
         analysis = {
             "artifact_type": "transition_structure",
