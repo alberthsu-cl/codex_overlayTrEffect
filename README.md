@@ -60,8 +60,8 @@ later as a second opinion without replacing the baseline metrics.
 
 ## Current Status
 
-The repository currently contains the design contracts and prompts for the
-Codex portion of the workflow:
+The repository contains the design contracts and prompts for the Codex portion
+of the workflow, plus the first local execution slice:
 
 - `prompts/codex_transition_analysis_prompt.md` describes the analysis-only
   pass.
@@ -71,11 +71,52 @@ Codex portion of the workflow:
 - `prompts/effect_design_schema.json` defines the `effect_design` JSON
   contract.
 - `docs/new_agent_flow.svg` documents the complete intended workflow.
+- `src/agent_app/` provides the thin local orchestration layer.
+- `tests/` contains focused tests for scoring and report assembly.
 
-The executable `agent` orchestration layer has not yet been extracted from
-`harness`. Until that work is complete, the existing `harness` project remains
-the implementation source for video preparation, native rendering, and
-algorithmic scoring.
+The local execution layer reuses the existing `harness` implementation through
+an explicit bridge. It does not import the old analyzer or planner.
+
+## First Local Commands
+
+Run these commands from `D:\\AI_Harness`:
+
+```powershell
+py -3 agent/src/main.py --help
+py -3 agent/src/main.py prepare `
+  --source-video harness/examples/sample_glitch.mp4 `
+  --output-dir agent/work/reference_transition `
+  --target-frame-count 30
+```
+
+The `render` command accepts the existing harness render-job JSON contract. A
+Codex-produced `effect_design.json` is kept alongside the job and is consumed
+by the later report step; it is not silently converted into a deterministic
+planner decision.
+
+```powershell
+py -3 agent/src/main.py render `
+  --job harness/examples/render_job.sample.json `
+  --output-root agent/work
+
+py -3 agent/src/main.py score `
+  --candidate agent/work/<run>/artifacts `
+  --reference agent/work/reference_transition `
+  --output agent/work/<run>/reports/score.json `
+  --width 1920 --height 1080
+
+py -3 agent/src/main.py report `
+  --analysis agent/artifacts/transition_analysis.json `
+  --design agent/artifacts/effect_design.json `
+  --render-report agent/work/<run>/render_report.json `
+  --score-report agent/work/<run>/reports/score.json `
+  --output agent/work/<run>/reports/regression_report.json
+```
+
+The native renderer is optional for the first setup check. Without a renderer,
+`render` records the request and returns `blocked`; with a built renderer it
+produces candidate PNG frames. Non-BMP preparation and scoring require
+`ffmpeg`.
 
 ## Related Projects
 
@@ -91,15 +132,12 @@ commands inside the repository you intend to change.
 
 ## Planned Implementation Order
 
-1. Extract the reusable frame-preparation, renderer-invocation, and scoring
-   components from `harness` into a small `agent` Python package.
-2. Add a local run workspace and stable CLI commands for prepare, render,
-   score, and report.
-3. Validate the full flow with an existing built-in transition effect.
-4. Add retrieval of existing effects before considering new implementation.
-5. Add constrained HLSL/C++ generation only after a candidate can compile,
+1. Validate the current local slice with an existing built-in transition
+   effect.
+2. Add retrieval of existing effects before considering new implementation.
+3. Add constrained HLSL/C++ generation only after a candidate can compile,
    render, and pass a defined regression check.
-6. Register and ship new effects in `overlaytrengine` only when their build and
+4. Register and ship new effects in `overlaytrengine` only when their build and
    runtime integration is understood.
 
 ## Design Constraints

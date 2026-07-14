@@ -1,0 +1,102 @@
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+
+from .workflow import build_report, prepare_reference, render_job, score_candidate
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    workspace_root = Path(__file__).resolve().parents[3]
+
+    try:
+        if args.command == "prepare":
+            result = prepare_reference(
+                workspace_root=workspace_root,
+                source_video=Path(args.source_video).resolve(),
+                output_dir=Path(args.output_dir).resolve(),
+                fps=args.fps,
+                width=args.width,
+                height=args.height,
+                target_frame_count=args.target_frame_count,
+                ffmpeg_path=args.ffmpeg,
+            )
+        elif args.command == "render":
+            renderer = args.renderer or _default_renderer(workspace_root)
+            result = render_job(
+                workspace_root=workspace_root,
+                job_file=Path(args.job).resolve(),
+                output_root=Path(args.output_root).resolve(),
+                renderer=renderer,
+            )
+        elif args.command == "score":
+            result = score_candidate(
+                workspace_root=workspace_root,
+                candidate=Path(args.candidate).resolve(),
+                reference=Path(args.reference).resolve(),
+                output_file=Path(args.output).resolve(),
+                width=args.width,
+                height=args.height,
+                frame_count=args.frame_count,
+                require_exact_frame_count=args.require_exact_frame_count,
+                ffmpeg_path=args.ffmpeg,
+            )
+        else:
+            result = build_report(
+                analysis_file=Path(args.analysis).resolve(),
+                design_file=Path(args.design).resolve(),
+                render_file=Path(args.render_report).resolve(),
+                score_file=Path(args.score_report).resolve(),
+                output_file=Path(args.output).resolve(),
+            )
+    except (FileNotFoundError, RuntimeError, ValueError, OSError) as error:
+        parser.exit(1, f"agent: error: {error}\n")
+
+    print(json.dumps(result, indent=2))
+    return 0 if result.get("status") in {"succeeded", "blocked"} else 1
+
+
+def _default_renderer(workspace_root: Path) -> str | None:
+    path = workspace_root / "harness" / "native_renderer" / "build" / "x64" / "Debug" / "OverlayTrHarnessRenderer.exe"
+    return str(path) if path.exists() else None
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Codex-driven transition effect workflow")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    prepare = subparsers.add_parser("prepare", help="prepare normalized reference transition frames")
+    prepare.add_argument("--source-video", required=True)
+    prepare.add_argument("--output-dir", required=True)
+    prepare.add_argument("--width", type=int, default=1920)
+    prepare.add_argument("--height", type=int, default=1080)
+    prepare.add_argument("--fps", type=int, default=30)
+    prepare.add_argument("--target-frame-count", type=int, default=30)
+    prepare.add_argument("--ffmpeg")
+
+    render = subparsers.add_parser("render", help="render a JSON job with the existing headless renderer")
+    render.add_argument("--job", required=True)
+    render.add_argument("--output-root", required=True)
+    render.add_argument("--renderer")
+
+    score = subparsers.add_parser("score", help="score candidate frames against reference frames")
+    score.add_argument("--candidate", required=True)
+    score.add_argument("--reference", required=True)
+    score.add_argument("--output", required=True)
+    score.add_argument("--width", type=int, required=True)
+    score.add_argument("--height", type=int, required=True)
+    score.add_argument("--frame-count", type=int)
+    score.add_argument("--require-exact-frame-count", action="store_true")
+    score.add_argument("--ffmpeg")
+
+    report = subparsers.add_parser("report", help="combine analysis, design, render, and score artifacts")
+    report.add_argument("--analysis", required=True)
+    report.add_argument("--design", required=True)
+    report.add_argument("--render-report", required=True)
+    report.add_argument("--score-report", required=True)
+    report.add_argument("--output", required=True)
+
+    return parser
