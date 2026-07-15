@@ -186,12 +186,26 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "recommended_effect_family"
+        "recommended_effect_family",
+        "family_status",
+        "visual_primitives",
+        "new_effect_needed",
+        "implementation_status"
       ],
       "properties": {
         "recommended_effect_family": {
           "type": "string",
           "description": "Nearest downstream effect family label."
+        },
+        "family_status": {
+          "type": "string",
+          "enum": ["known", "unknown"],
+          "description": "Whether the family maps to a known catalog or grammar family."
+        },
+        "visual_primitives": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Observable primitives that guide implementation when the family is unknown."
         },
         "recommended_effect_id": {
           "type": "string",
@@ -199,6 +213,11 @@
         },
         "new_effect_needed": {
           "type": "boolean"
+        },
+        "implementation_status": {
+          "type": "string",
+          "enum": ["supported", "unsupported", "review_required"],
+          "description": "Whether the current constrained workflow can support implementation."
         },
         "implementation_notes": {
           "type": "string"

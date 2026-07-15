@@ -30,4 +30,10 @@ That artifact is intended to drive later steps such as:
 - deciding whether a new effect is needed
 - preparing a later implementation prompt
 
+The analysis artifact distinguishes `family_status: "known"` from
+`family_status: "unknown"`. Unknown means that no existing family is adequate;
+it does not authorize unrestricted shader generation. `visual_primitives`,
+`new_effect_needed`, and `implementation_status` record whether the observed
+behavior can proceed through the current constrained grammar or requires review.
+
 This folder does not yet contain the pass-2 implementation prompt set. That should be drafted after the new analysis contract is stable and the reusable render-and-score path has been extracted from `harness/`.

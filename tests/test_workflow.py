@@ -80,7 +80,13 @@ class WorkflowTests(unittest.TestCase):
             "frame_progress_mapping": [],
             "evidence": ["The image moves horizontally across the frame."],
             "limitations": [],
-            "planner_hints": {"recommended_effect_family": "seamless_slide"},
+            "planner_hints": {
+                "recommended_effect_family": "seamless_slide",
+                "family_status": "known",
+                "visual_primitives": ["translation"],
+                "new_effect_needed": False,
+                "implementation_status": "supported",
+            },
         }
         design = {
             "artifact_type": "effect_design",
@@ -142,7 +148,13 @@ class WorkflowTests(unittest.TestCase):
             "frame_progress_mapping": [],
             "evidence": [],
             "limitations": [],
-            "planner_hints": {"recommended_effect_family": "unknown"},
+            "planner_hints": {
+                "recommended_effect_family": "unknown",
+                "family_status": "unknown",
+                "visual_primitives": ["unknown"],
+                "new_effect_needed": True,
+                "implementation_status": "review_required",
+            },
         }
         design = {
             "artifact_type": "effect_design",

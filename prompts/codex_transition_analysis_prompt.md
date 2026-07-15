@@ -54,8 +54,20 @@ What to extract:
 - a short limitations list when the sample is ambiguous or partially occluded
 - a downstream recommendation:
   - nearest existing effect family if there is a good match
+  - whether the family is known or unknown
+  - observable visual primitives for unknown families
   - whether a new effect is likely needed
+  - whether the current constrained grammar can support implementation
   - implementation notes only at a high level
+
+Decision rules:
+- Use `family_status: "known"` only when the result maps to a known catalog or
+  constrained grammar family.
+- Use `family_status: "unknown"` when no existing family is adequate. This is
+  a classification result, not permission to generate arbitrary shader code.
+- Set `implementation_status` to `unsupported` when the current grammar cannot
+  represent the observed behavior, and use `review_required` when feasibility
+  is uncertain.
 
 Use the schema supplied alongside this prompt. The final response must satisfy that schema exactly.
 ```

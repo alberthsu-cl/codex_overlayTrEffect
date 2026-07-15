@@ -49,8 +49,11 @@
   ],
   "planner_hints": {
     "recommended_effect_family": "glitch",
+    "family_status": "known",
+    "visual_primitives": ["uv_displacement", "rgb_split", "noise"],
     "recommended_effect_id": "CES_PlugIn_Glitch.dll\\DSP_TR_04_Bad Signal_4",
     "new_effect_needed": false,
+    "implementation_status": "supported",
     "implementation_notes": "Start with the existing resource-backed glitch effect and compare its distortion envelope against the reference.",
     "fit_rationale": "The sample is dominated by RGB separation, horizontal tearing, noise, and UV-like displacement, which are closer to the existing glitch family than to dissolve, wipe, or slide."
   }

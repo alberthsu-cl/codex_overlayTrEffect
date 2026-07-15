@@ -31,6 +31,25 @@ def validate_transition_analysis(payload: dict[str, Any]) -> list[str]:
             _require_field(transition, field, issues, prefix="transition")
         _validate_confidence(transition.get("confidence"), "transition.confidence", issues)
 
+    planner_hints = payload.get("planner_hints")
+    if isinstance(planner_hints, dict):
+        for field in (
+            "recommended_effect_family",
+            "family_status",
+            "visual_primitives",
+            "new_effect_needed",
+            "implementation_status",
+        ):
+            _require_field(planner_hints, field, issues, prefix="planner_hints")
+        if planner_hints.get("family_status") not in {"known", "unknown"}:
+            issues.append("planner_hints.family_status must be 'known' or 'unknown'")
+        if planner_hints.get("implementation_status") not in {
+            "supported", "unsupported", "review_required"
+        }:
+            issues.append("planner_hints.implementation_status is invalid")
+        if not isinstance(planner_hints.get("visual_primitives"), list):
+            issues.append("planner_hints.visual_primitives must be an array")
+
     return issues
 
 
