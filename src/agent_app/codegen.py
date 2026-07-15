@@ -10,6 +10,7 @@ from .io import load_json, write_json
 
 
 _DISSOLVE_ID = re.compile(r"^ModelGenerated\\Dissolve_(\d{2})$")
+_MODEL_ID = re.compile(r"^ModelGenerated\\([A-Za-z][A-Za-z0-9]*)_(\d{2})$")
 _TEMPLATE_FILES = (
     "TrGeneratedDissolve.h",
     "TrGeneratedDissolve.cpp",
@@ -202,9 +203,9 @@ def register_effect(manifest_file: Path, target_root: Path) -> dict[str, Any]:
     """Copy a generated package into OverlayTrPlugInFx and register it safely."""
     manifest = load_json(manifest_file)
     effect_id = manifest.get("effect_id")
-    match = _DISSOLVE_ID.fullmatch(effect_id or "")
+    match = _MODEL_ID.fullmatch(effect_id or "")
     if not match:
-        raise ValueError("registration supports effect IDs matching ModelGenerated\\Dissolve_XX")
+        raise ValueError("registration supports effect IDs matching ModelGenerated\\Family_XX")
 
     target_dir = target_root / "OverlayTrPlugInFx"
     fx_info_path = target_dir / "FxInfo.h"
@@ -214,11 +215,13 @@ def register_effect(manifest_file: Path, target_root: Path) -> dict[str, Any]:
     if len(source_paths) != len(_TEMPLATE_FILES) or any(not path.exists() for path in source_paths):
         raise ValueError("manifest does not contain all existing generated source files")
 
-    suffix = int(match.group(1))
-    index = 21 + suffix
-    symbol = f"ModelGeneratedDissolve{match.group(1)}"
-    class_name = f"CTr{symbol}"
-    shader_symbol = f"g_Tr_{symbol}_PS"
+    if manifest.get("generated_resources"):
+        raise ValueError("pure-HLSL registration does not accept generated resources yet")
+    suffix = int(match.group(2))
+    symbol = f"ModelGenerated{match.group(1)}{match.group(2)}"
+    class_name = manifest.get("class_name") or f"CTr{symbol}"
+    shader_symbol = manifest.get("shader_symbol") or f"g_Tr_{symbol}_PS"
+    base_stem = manifest.get("base_stem") or "TrGeneratedDissolve"
     destination_paths = [target_dir / path.name for path in source_paths]
     raw_target_text = {
         fx_info_path: _read_text_preserving_newlines(fx_info_path),
@@ -226,6 +229,8 @@ def register_effect(manifest_file: Path, target_root: Path) -> dict[str, Any]:
         project_path: _read_text_preserving_newlines(project_path),
     }
     target_text = {path: content.replace("\r\n", "\n") for path, content in raw_target_text.items()}
+    index_values = [int(value) for value in re.findall(r"\n\s+(\d+)\n", target_text[fx_info_path])]
+    index = max(index_values, default=0) + 1
 
     if any(path.exists() for path in destination_paths):
         raise FileExistsError("refusing to overwrite an existing target effect source")
@@ -235,12 +240,12 @@ def register_effect(manifest_file: Path, target_root: Path) -> dict[str, Any]:
     if class_name in target_text[plugin_path] or shader_symbol in target_text[project_path]:
         raise ValueError("generated class or shader symbol is already present")
 
-    include_anchor = '#include "TrGeneratedDissolve.h"'
+    include_anchor = f'#include "{base_stem}.h"'
     fx_info_anchor = "\t};\n}"
     switch_anchor = "\t\tdefault:\n"
-    project_compile_anchor = '    <ClCompile Include="TrGeneratedDissolve.cpp" />'
-    project_include_anchor = '    <ClInclude Include="TrGeneratedDissolve.h" />'
-    project_shader_anchor = '    <FxCompile Include="TrGeneratedDissolve_ps.hlsl">'
+    project_compile_anchor = f'    <ClCompile Include="{base_stem}.cpp" />'
+    project_include_anchor = f'    <ClInclude Include="{base_stem}.h" />'
+    project_shader_anchor = f'    <FxCompile Include="{base_stem}_ps.hlsl">'
     for path, anchor in (
         (fx_info_path, include_anchor),
         (fx_info_path, fx_info_anchor),
@@ -256,7 +261,7 @@ def register_effect(manifest_file: Path, target_root: Path) -> dict[str, Any]:
         "\t\t{\n"
         "\t\t\t// Agent-generated dissolve effect\n"
         f'\t\t\t"{cpp_effect_id}",\n'
-        f'\t\t\t"Generated Dissolve {match.group(1)}",\n'
+        f'\t\t\t"Generated {match.group(1)} {match.group(2)}",\n'
         f"\t\t\t{index}\n"
         "\t\t}\n"
     )

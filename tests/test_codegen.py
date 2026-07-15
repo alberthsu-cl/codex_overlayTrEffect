@@ -68,7 +68,7 @@ class CodegenTests(unittest.TestCase):
         plugin_dir.mkdir(parents=True)
         try:
             (plugin_dir / "FxInfo.h").write_text(
-                '#include "TrGeneratedDissolve.h"\nnamespace PlugInFxInfo {\n\tstatic FxInfo g_FxInfoList[] =\n\t{\n\t};\n}\n',
+                '#include "TrGeneratedDissolve.h"\nnamespace PlugInFxInfo {\n\tstatic FxInfo g_FxInfoList[] =\n\t{\n\t\t22\n\t};\n}\n',
                 encoding="utf-8",
             )
             (plugin_dir / "OverlayTrPlugInFx.cpp").write_text("\t\tdefault:\n", encoding="utf-8")
