@@ -1,0 +1,319 @@
+from __future__ import annotations
+
+import re
+import shutil
+from pathlib import Path
+from typing import Any
+
+from .artifacts import validate_effect_design
+from .io import load_json, write_json
+
+
+_DISSOLVE_ID = re.compile(r"^ModelGenerated\\Dissolve_(\d{2})$")
+_TEMPLATE_FILES = (
+    "TrGeneratedDissolve.h",
+    "TrGeneratedDissolve.cpp",
+    "TrGeneratedDissolve_ps.hlsl",
+)
+
+
+def generate_effect(
+    design_file: Path,
+    output_dir: Path,
+    template_root: Path,
+    manifest_file: Path,
+    force: bool = False,
+) -> dict[str, Any]:
+    design = load_json(design_file)
+    issues = validate_effect_design(design)
+    if issues:
+        raise ValueError("invalid effect design: " + "; ".join(issues))
+    action = design["decision"]["action"]
+    if action == "tune_existing_effect":
+        return _generate_source_variant(
+            design=design,
+            template_root=template_root,
+            output_dir=output_dir,
+            manifest_file=manifest_file,
+            force=force,
+        )
+    if action != "implement_new_effect":
+        raise ValueError("code generation requires an implement_new_effect or tune_existing_effect decision")
+
+    effect_id = design["target_effect"].get("effect_id")
+    match = _DISSOLVE_ID.fullmatch(effect_id or "")
+    if not match:
+        raise ValueError(
+            "the first generator supports effect IDs matching "
+            "ModelGenerated\\Dissolve_XX"
+        )
+
+    symbol = f"ModelGeneratedDissolve{match.group(1)}"
+    class_name = f"CTr{symbol}"
+    shader_symbol = f"g_Tr_{symbol}_PS"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    generated_files: list[str] = []
+    for template_name in _TEMPLATE_FILES:
+        template_path = template_root / template_name
+        if not template_path.exists():
+            raise FileNotFoundError(f"effect template not found: {template_path}")
+
+        output_name = template_name.replace("TrGeneratedDissolve", f"Tr{symbol}")
+        output_path = output_dir / output_name
+        if output_path.exists() and not force:
+            raise FileExistsError(f"refusing to overwrite generated file: {output_path}")
+
+        source = template_path.read_text(encoding="utf-8")
+        source = source.replace("CTrGeneratedDissolve", class_name)
+        source = source.replace("TrGeneratedDissolve", f"Tr{symbol}")
+        source = source.replace("g_Tr_GeneratedDissolve_PS", shader_symbol)
+        output_path.write_text(source, encoding="utf-8")
+        generated_files.append(str(output_path))
+
+    manifest = {
+        "manifest_type": "generated_effect",
+        "manifest_version": 1,
+        "effect_id": effect_id,
+        "family": design["target_effect"].get("family"),
+        "template": "dissolve",
+        "class_name": class_name,
+        "shader_symbol": shader_symbol,
+        "generated_files": generated_files,
+        "registration": {
+            "fx_info_header": "overlaytrengine/OverlayTrPlugInFx/FxInfo.h",
+            "plugin_source": "overlaytrengine/OverlayTrPlugInFx/OverlayTrPlugInFx.cpp",
+            "project_file": "overlaytrengine/OverlayTrPlugInFx/OverlayTrPlugInFx.vcxproj",
+            "required": True,
+        },
+    }
+    write_json(manifest_file, manifest)
+    return manifest
+
+
+def _generate_source_variant(
+    design: dict[str, Any],
+    template_root: Path,
+    output_dir: Path,
+    manifest_file: Path,
+    force: bool,
+) -> dict[str, Any]:
+    variant = design.get("source_variant")
+    target = design["target_effect"]
+    effect_id = target.get("effect_id")
+    if not isinstance(variant, dict):
+        raise ValueError("tune_existing_effect requires a source_variant object")
+    if not isinstance(effect_id, str) or not effect_id.startswith("ModelGenerated\\"):
+        raise ValueError("source variants require a ModelGenerated\\... effect ID")
+
+    base_stem = variant.get("base_stem")
+    source_files = variant.get("source_files")
+    replacements = variant.get("replacements", {})
+    resource_files = variant.get("resource_files", [])
+    resource_folder = variant.get("resource_folder")
+    if not isinstance(base_stem, str) or not base_stem:
+        raise ValueError("source_variant.base_stem is required")
+    if not isinstance(source_files, list) or not source_files:
+        raise ValueError("source_variant.source_files must be a non-empty array")
+    if not isinstance(replacements, dict):
+        raise ValueError("source_variant.replacements must be an object")
+    if resource_files and (not isinstance(resource_folder, str) or not resource_folder):
+        raise ValueError("source_variant.resource_folder is required when resources are declared")
+
+    suffix = effect_id.rsplit("_", 1)[-1]
+    if not suffix.isdigit():
+        raise ValueError("source variant effect IDs must end with a numeric index")
+    symbol = "ModelGenerated" + effect_id.split("ModelGenerated", 1)[1].replace("\\", "").replace("_", "")
+    class_name = f"CTr{symbol}"
+    shader_symbol = f"g_Tr_{symbol}_PS"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    generated_files: list[str] = []
+    replacement_counts = {old: 0 for old in replacements}
+    for relative_name in source_files:
+        if not isinstance(relative_name, str):
+            raise ValueError("source_variant.source_files must contain strings")
+        template_path = template_root / relative_name
+        if not template_path.exists():
+            raise FileNotFoundError(f"source variant template not found: {template_path}")
+        output_name = Path(relative_name).name.replace(base_stem, f"Tr{symbol}")
+        output_path = output_dir / output_name
+        if output_path.exists() and not force:
+            raise FileExistsError(f"refusing to overwrite generated file: {output_path}")
+        source = template_path.read_text(encoding="utf-8")
+        source = source.replace(f"C{base_stem}", class_name)
+        source = source.replace(base_stem, f"Tr{symbol}")
+        source = source.replace(f"g_Tr_{base_stem.removeprefix('Tr')}_PS", shader_symbol)
+        for old, new in replacements.items():
+            if not isinstance(old, str) or not isinstance(new, str):
+                raise ValueError("source_variant.replacements must map strings to strings")
+            count = source.count(old)
+            if count > 1:
+                raise ValueError(f"source replacement must match exactly once: {old}")
+            if count == 1:
+                source = source.replace(old, new, 1)
+                replacement_counts[old] += 1
+        output_path.write_text(source, encoding="utf-8")
+        generated_files.append(str(output_path))
+
+    for old, count in replacement_counts.items():
+        if count != 1:
+            raise ValueError(f"source replacement must match exactly once: {old}")
+
+    generated_resources: list[dict[str, str]] = []
+    for relative_name in resource_files:
+        if not isinstance(relative_name, str):
+            raise ValueError("source_variant.resource_files must contain strings")
+        source_path = template_root / relative_name
+        if not source_path.exists():
+            raise FileNotFoundError(f"source variant resource not found: {source_path}")
+        resource_output = output_dir / "resources" / resource_folder / Path(relative_name).name
+        if resource_output.exists() and not force:
+            raise FileExistsError(f"refusing to overwrite generated resource: {resource_output}")
+        resource_output.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source_path, resource_output)
+        generated_resources.append(
+            {
+                "source": str(resource_output),
+                "runtime_relative_path": f"Resource/{resource_folder}/{resource_output.name}",
+            }
+        )
+
+    manifest = {
+        "manifest_type": "generated_effect",
+        "manifest_version": 1,
+        "effect_id": effect_id,
+        "family": target.get("family"),
+        "template": "source_variant",
+        "base_effect_id": target.get("base_effect_id"),
+        "base_stem": base_stem,
+        "class_name": class_name,
+        "shader_symbol": shader_symbol,
+        "generated_files": generated_files,
+        "generated_resources": generated_resources,
+        "source_replacements": replacements,
+        "registration": {"required": True},
+    }
+    write_json(manifest_file, manifest)
+    return manifest
+
+
+def register_effect(manifest_file: Path, target_root: Path) -> dict[str, Any]:
+    """Copy a generated package into OverlayTrPlugInFx and register it safely."""
+    manifest = load_json(manifest_file)
+    effect_id = manifest.get("effect_id")
+    match = _DISSOLVE_ID.fullmatch(effect_id or "")
+    if not match:
+        raise ValueError("registration supports effect IDs matching ModelGenerated\\Dissolve_XX")
+
+    target_dir = target_root / "OverlayTrPlugInFx"
+    fx_info_path = target_dir / "FxInfo.h"
+    plugin_path = target_dir / "OverlayTrPlugInFx.cpp"
+    project_path = target_dir / "OverlayTrPlugInFx.vcxproj"
+    source_paths = [Path(path) for path in manifest.get("generated_files", [])]
+    if len(source_paths) != len(_TEMPLATE_FILES) or any(not path.exists() for path in source_paths):
+        raise ValueError("manifest does not contain all existing generated source files")
+
+    suffix = int(match.group(1))
+    index = 21 + suffix
+    symbol = f"ModelGeneratedDissolve{match.group(1)}"
+    class_name = f"CTr{symbol}"
+    shader_symbol = f"g_Tr_{symbol}_PS"
+    destination_paths = [target_dir / path.name for path in source_paths]
+    raw_target_text = {
+        fx_info_path: _read_text_preserving_newlines(fx_info_path),
+        plugin_path: _read_text_preserving_newlines(plugin_path),
+        project_path: _read_text_preserving_newlines(project_path),
+    }
+    target_text = {path: content.replace("\r\n", "\n") for path, content in raw_target_text.items()}
+
+    if any(path.exists() for path in destination_paths):
+        raise FileExistsError("refusing to overwrite an existing target effect source")
+    cpp_effect_id = effect_id.replace("\\", "\\\\")
+    if cpp_effect_id in target_text[fx_info_path]:
+        raise ValueError(f"effect ID is already registered: {effect_id}")
+    if class_name in target_text[plugin_path] or shader_symbol in target_text[project_path]:
+        raise ValueError("generated class or shader symbol is already present")
+
+    include_anchor = '#include "TrGeneratedDissolve.h"'
+    fx_info_anchor = "\t};\n}"
+    switch_anchor = "\t\tdefault:\n"
+    project_compile_anchor = '    <ClCompile Include="TrGeneratedDissolve.cpp" />'
+    project_include_anchor = '    <ClInclude Include="TrGeneratedDissolve.h" />'
+    project_shader_anchor = '    <FxCompile Include="TrGeneratedDissolve_ps.hlsl">'
+    for path, anchor in (
+        (fx_info_path, include_anchor),
+        (fx_info_path, fx_info_anchor),
+        (plugin_path, switch_anchor),
+        (project_path, project_compile_anchor),
+        (project_path, project_include_anchor),
+        (project_path, project_shader_anchor),
+    ):
+        if anchor not in target_text[path]:
+            raise ValueError(f"registration anchor not found in {path.name}: {anchor}")
+
+    fx_info_entry = (
+        "\t\t{\n"
+        "\t\t\t// Agent-generated dissolve effect\n"
+        f'\t\t\t"{cpp_effect_id}",\n'
+        f'\t\t\t"Generated Dissolve {match.group(1)}",\n'
+        f"\t\t\t{index}\n"
+        "\t\t}\n"
+    )
+    case = f"\t\tcase {index}:\n\t\t\tm_pFx = new {class_name}(g_hInst, pFxParam->wszReferencePath);\n\t\t\tbreak;\n"
+    shader_entry = _shader_project_entry(f"Tr{symbol}_ps.hlsl", shader_symbol)
+
+    updated = dict(target_text)
+    updated[fx_info_path] = updated[fx_info_path].replace(
+        include_anchor, f'{include_anchor}\n#include "Tr{symbol}.h"', 1
+    ).replace(fx_info_anchor, fx_info_entry + fx_info_anchor, 1)
+    updated[plugin_path] = updated[plugin_path].replace(switch_anchor, case + switch_anchor, 1)
+    updated[project_path] = updated[project_path].replace(
+        project_compile_anchor,
+        f'{project_compile_anchor}\n    <ClCompile Include="Tr{symbol}.cpp" />',
+        1,
+    ).replace(
+        project_include_anchor,
+        f'{project_include_anchor}\n    <ClInclude Include="Tr{symbol}.h" />',
+        1,
+    ).replace(project_shader_anchor, shader_entry + "\n" + project_shader_anchor, 1)
+
+    for source, destination in zip(source_paths, destination_paths):
+        shutil.copyfile(source, destination)
+    for path, content in updated.items():
+        newline = "\r\n" if "\r\n" in raw_target_text[path] else "\n"
+        path.write_text(content.replace("\n", newline), encoding="utf-8", newline="")
+
+    registration = {
+        "effect_id": effect_id,
+        "index": index,
+        "class_name": class_name,
+        "shader_symbol": shader_symbol,
+        "target_files": [str(path) for path in destination_paths],
+        "registration_files": [str(fx_info_path), str(plugin_path), str(project_path)],
+    }
+    manifest["registration"] = registration
+    write_json(manifest_file, manifest)
+    return registration
+
+
+def _shader_project_entry(filename: str, shader_symbol: str) -> str:
+    return (
+        f'    <FxCompile Include="{filename}">\n'
+        '      <EntryPointName Condition="\'$(Configuration)|$(Platform)\'==\'Debug|x64\'">Pixel_Shader</EntryPointName>\n'
+        '      <ShaderType Condition="\'$(Configuration)|$(Platform)\'==\'Debug|x64\'">Pixel</ShaderType>\n'
+        '      <ShaderModel Condition="\'$(Configuration)|$(Platform)\'==\'Debug|x64\'">4.0</ShaderModel>\n'
+        f'      <VariableName Condition="\'$(Configuration)|$(Platform)\'==\'Debug|x64\'">{shader_symbol}</VariableName>\n'
+        '      <HeaderFileOutput Condition="\'$(Configuration)|$(Platform)\'==\'Debug|x64\'">$(ProjectDir)Shader\\%(Filename).h</HeaderFileOutput>\n'
+        '      <EntryPointName Condition="\'$(Configuration)|$(Platform)\'==\'Release|x64\'">Pixel_Shader</EntryPointName>\n'
+        '      <ShaderType Condition="\'$(Configuration)|$(Platform)\'==\'Release|x64\'">Pixel</ShaderType>\n'
+        '      <ShaderModel Condition="\'$(Configuration)|$(Platform)\'==\'Release|x64\'">4.0</ShaderModel>\n'
+        f'      <VariableName Condition="\'$(Configuration)|$(Platform)\'==\'Release|x64\'">{shader_symbol}</VariableName>\n'
+        '      <HeaderFileOutput Condition="\'$(Configuration)|$(Platform)\'==\'Release|x64\'">$(ProjectDir)Shader\\%(Filename).h</HeaderFileOutput>\n'
+        '    </FxCompile>'
+    )
+
+
+def _read_text_preserving_newlines(path: Path) -> str:
+    with path.open("r", encoding="utf-8", newline="") as handle:
+        return handle.read()

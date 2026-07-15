@@ -111,6 +111,17 @@
           }
         }
       }
+    },
+    "source_variant": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "base_stem": {"type": "string"},
+        "source_files": {"type": "array", "items": {"type": "string"}},
+        "replacements": {"type": "object", "additionalProperties": {"type": "string"}},
+        "resource_folder": {"type": "string"},
+        "resource_files": {"type": "array", "items": {"type": "string"}}
+      }
     }
   }
 }

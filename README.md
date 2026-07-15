@@ -192,6 +192,15 @@ After registration, build the plugin, stage the DLL through the existing
 deployment flow, render with the headless renderer, and score the candidate
 before treating the effect as validated.
 
+Generated effects that require runtime resources must keep the existing
+deployment convention. Source resources belong under
+`overlaytrengine/OverlayTrPlugInFx/Resource/<effect-folder>/`; the built
+runtime copy is staged under
+`overlaytrengine/x64/Debug/Resource/<effect-folder>/` or the corresponding
+Release directory. The plugin first checks the supplied input folder and then
+falls back to the DLL-relative `Resource` directory, so no new production
+interface is required.
+
 New-effect execution is gated by the analysis artifact. The planner hint must
 set `implementation_status` to `supported`; `review_required` and
 `unsupported` stop `build-job` before rendering or deployment.
