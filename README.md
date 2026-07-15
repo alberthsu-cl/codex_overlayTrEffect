@@ -192,6 +192,10 @@ After registration, build the plugin, stage the DLL through the existing
 deployment flow, render with the headless renderer, and score the candidate
 before treating the effect as validated.
 
+New-effect execution is gated by the analysis artifact. The planner hint must
+set `implementation_status` to `supported`; `review_required` and
+`unsupported` stop `build-job` before rendering or deployment.
+
 `build-job` supports `reuse_existing_effect`, `tune_existing_effect`, and the
 first constrained `implement_new_effect` path. Generated designs must provide
 `target_effect.effect_id`; existing-effect designs may provide either

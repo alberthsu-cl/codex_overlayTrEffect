@@ -153,7 +153,7 @@ class WorkflowTests(unittest.TestCase):
                 "family_status": "unknown",
                 "visual_primitives": ["unknown"],
                 "new_effect_needed": True,
-                "implementation_status": "review_required",
+                "implementation_status": "supported",
             },
         }
         design = {
@@ -171,6 +171,43 @@ class WorkflowTests(unittest.TestCase):
         job = build_render_job(analysis, design, "source_a", "source_b", None, 16, 16, 30, 2)
         self.assertEqual(job["effect"]["fx_id"], design["target_effect"]["effect_id"])
         self.assertEqual(job["planning"]["decision"], "implement_new_effect")
+
+    def test_build_render_job_blocks_unsupported_new_effect(self) -> None:
+        analysis = {
+            "artifact_type": "transition_structure",
+            "artifact_version": 1,
+            "input_video": "sample.mp4",
+            "video_metadata": {"frame_count": 2},
+            "transition": {
+                "style_label": "unknown",
+                "summary": "The effect cannot be represented by the current grammar.",
+                "start_frame": 0,
+                "end_frame": 1,
+                "confidence": 0.4,
+            },
+            "visual_signals": {},
+            "frame_progress_mapping": [],
+            "evidence": [],
+            "limitations": [],
+            "planner_hints": {
+                "recommended_effect_family": "unknown",
+                "family_status": "unknown",
+                "visual_primitives": ["unsupported_behavior"],
+                "new_effect_needed": True,
+                "implementation_status": "unsupported",
+            },
+        }
+        design = {
+            "artifact_type": "effect_design",
+            "artifact_version": 1,
+            "analysis_artifact": "analysis.json",
+            "decision": {"action": "implement_new_effect", "confidence": 0.8},
+            "target_effect": {"family": "unknown", "effect_id": "ModelGenerated\\Unknown_01"},
+            "design_notes": {"must_preserve": [], "approximations": [], "risks": []},
+        }
+
+        with self.assertRaisesRegex(ValueError, "implementation_status=supported"):
+            build_render_job(analysis, design, "source_a", "source_b", None, 16, 16, 30, 2)
 
     def test_score_candidate_writes_frame_and_aggregate_metrics(self) -> None:
         fake_score = type(

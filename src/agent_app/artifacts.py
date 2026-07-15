@@ -103,6 +103,13 @@ def build_render_job(
 
     decision = design["decision"]
     action = decision["action"]
+    planner_hints = analysis["planner_hints"]
+    implementation_status = planner_hints.get("implementation_status")
+    if action == "implement_new_effect" and implementation_status != "supported":
+        raise ValueError(
+            "new-effect execution requires planner_hints.implementation_status=supported; "
+            f"received {implementation_status!r}"
+        )
     target_effect = design["target_effect"]
     effect_id = target_effect.get("effect_id") or target_effect.get("closest_existing_effect_id")
     if not effect_id:
@@ -143,6 +150,9 @@ def build_render_job(
             "analysis_artifact": design.get("analysis_artifact"),
             "analysis_style_label": analysis["transition"].get("style_label"),
             "analysis_summary": analysis["transition"].get("summary"),
+            "analysis_family_status": planner_hints.get("family_status"),
+            "analysis_visual_primitives": planner_hints.get("visual_primitives", []),
+            "analysis_implementation_status": implementation_status,
             "design_reason": decision.get("reason"),
             "must_preserve": design["design_notes"].get("must_preserve", []),
             "approximations": design["design_notes"].get("approximations", []),
