@@ -14,6 +14,7 @@ from .workflow import (
     render_job,
     score_candidate,
 )
+from .codegen import generate_effect, register_effect
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -101,6 +102,27 @@ def main(argv: list[str] | None = None) -> int:
                 frame_count=args.frame_count,
             )
             result = {"status": "succeeded", "job": result, "output": str(Path(args.output).resolve())}
+        elif args.command == "generate":
+            result = {
+                "status": "succeeded",
+                "manifest": generate_effect(
+                    design_file=Path(args.design).resolve(),
+                    output_dir=Path(args.output_dir).resolve(),
+                    template_root=Path(args.template_root).resolve()
+                    if args.template_root
+                    else workspace_root / "overlaytrengine" / "OverlayTrPlugInFx",
+                    manifest_file=Path(args.manifest).resolve(),
+                    force=args.force,
+                ),
+            }
+        elif args.command == "register":
+            result = {
+                "status": "succeeded",
+                "registration": register_effect(
+                    manifest_file=Path(args.manifest).resolve(),
+                    target_root=Path(args.target_root).resolve(),
+                ),
+            }
         else:
             result = build_report(
                 analysis_file=Path(args.analysis).resolve(),
@@ -205,6 +227,23 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         help="override the render frame count; otherwise use the reference manifest, then 30",
     )
+
+    generate = subparsers.add_parser(
+        "generate",
+        help="generate isolated C++/HLSL sources from a supported effect template",
+    )
+    generate.add_argument("--design", required=True)
+    generate.add_argument("--output-dir", required=True)
+    generate.add_argument("--manifest", required=True)
+    generate.add_argument("--template-root")
+    generate.add_argument("--force", action="store_true")
+
+    register = subparsers.add_parser(
+        "register",
+        help="copy a generated package into OverlayTrPlugInFx and register it",
+    )
+    register.add_argument("--manifest", required=True)
+    register.add_argument("--target-root", required=True)
 
     report = subparsers.add_parser("report", help="combine analysis, design, render, and score artifacts")
     report.add_argument("--analysis", required=True)

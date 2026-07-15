@@ -84,27 +84,24 @@ def build_render_job(
 
     decision = design["decision"]
     action = decision["action"]
-    if action == "implement_new_effect":
-        raise ValueError(
-            "effect design requests implement_new_effect; code generation is not "
-            "enabled until compile/render/score validation exists"
-        )
-
     target_effect = design["target_effect"]
     effect_id = target_effect.get("effect_id") or target_effect.get("closest_existing_effect_id")
     if not effect_id:
         raise ValueError(
             "effect design must provide target_effect.effect_id or "
-            "target_effect.closest_existing_effect_id for existing-effect rendering"
+            "target_effect.closest_existing_effect_id for rendering"
         )
 
     family = target_effect.get("family") or "single_pass"
+    category = target_effect.get("expected_runtime_shape") or family
+    if category == "single_pass_fullscreen":
+        category = "single_pass"
     job_name = _job_name(family, action)
     return {
         "job_name": job_name,
         "effect": {
             "fx_id": effect_id,
-            "category": target_effect.get("expected_runtime_shape") or family,
+            "category": category,
             "effect_spec": None,
             "uniforms": {"progress": 0.0},
         },

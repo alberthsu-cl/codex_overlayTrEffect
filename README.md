@@ -72,7 +72,7 @@ of the workflow, plus the first local execution slice:
   contract.
 - `docs/new_agent_flow.svg` documents the complete intended workflow.
 - `src/agent_app/` provides the thin local orchestration layer.
-- `tests/` contains focused tests for scoring and report assembly.
+- `tests/` contains focused tests for scoring, report assembly, and code generation.
 
 The local execution layer reuses the existing `harness` implementation through
 an explicit bridge. It does not import the old analyzer or planner.
@@ -166,12 +166,36 @@ it does not change the selected effect automatically. Multiple catalog records
 may refer to the same runtime FX ID, so both the catalog effect ID and resolved
 FX ID are retained in the report.
 
-`build-job` currently supports `reuse_existing_effect` and
-`tune_existing_effect`. The design artifact must provide either
+`generate` creates an isolated C++ wrapper, HLSL shader, and manifest from a
+supported effect template. The first generator supports IDs in the
+`ModelGenerated\\Dissolve_XX` family:
+
+```powershell
+py -3 agent/src/main.py generate `
+  --design agent/examples/generated_dissolve.effect_design.json `
+  --output-dir agent/work/generated_dissolve_01 `
+  --manifest agent/work/generated_dissolve_01/manifest.json
+```
+
+`register` is a separate, explicit step. It copies the generated sources into
+`OverlayTrPlugInFx`, adds the FX table and switch registration, and updates the
+Visual Studio project. It refuses duplicate FX IDs, existing destination files,
+or missing source anchors.
+
+```powershell
+py -3 agent/src/main.py register `
+  --manifest agent/work/generated_dissolve_01/manifest.json `
+  --target-root overlaytrengine
+```
+
+After registration, build the plugin, stage the DLL through the existing
+deployment flow, render with the headless renderer, and score the candidate
+before treating the effect as validated.
+
+`build-job` supports `reuse_existing_effect`, `tune_existing_effect`, and the
+first constrained `implement_new_effect` path. Generated designs must provide
+`target_effect.effect_id`; existing-effect designs may provide either
 `target_effect.effect_id` or `target_effect.closest_existing_effect_id`.
-`implement_new_effect` is rejected intentionally; generated C++/HLSL will be
-added only after the existing-effect path provides a reliable compile, render,
-and regression baseline.
 
 ## Related Projects
 
@@ -190,10 +214,9 @@ commands inside the repository you intend to change.
 1. Validate the current local slice with an existing built-in transition
    effect.
 2. Add retrieval of existing effects before considering new implementation.
-3. Add constrained HLSL/C++ generation only after a candidate can compile,
-   render, and pass a defined regression check.
-4. Register and ship new effects in `overlaytrengine` only when their build and
-   runtime integration is understood.
+3. Expand constrained HLSL/C++ generation beyond the dissolve baseline.
+4. Register and ship new effects in `overlaytrengine` only after their build,
+   runtime integration, and regression results are recorded.
 
 ## Design Constraints
 

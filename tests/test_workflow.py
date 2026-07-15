@@ -119,7 +119,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(job["inputs"]["reference_transition"], "reference_transition")
         self.assertEqual(job["planning"]["decision"], "reuse_existing_effect")
 
-    def test_build_render_job_rejects_new_effect_until_codegen_is_enabled(self) -> None:
+    def test_build_render_job_accepts_compiled_new_effect(self) -> None:
         analysis = {
             "artifact_type": "transition_structure",
             "artifact_version": 1,
@@ -149,12 +149,16 @@ class WorkflowTests(unittest.TestCase):
             "artifact_version": 1,
             "analysis_artifact": "analysis.json",
             "decision": {"action": "implement_new_effect", "confidence": 0.7},
-            "target_effect": {"family": "unknown"},
+            "target_effect": {
+                "family": "seamless",
+                "effect_id": "ModelGenerated\\Dissolve_01",
+            },
             "design_notes": {"must_preserve": [], "approximations": [], "risks": []},
         }
 
-        with self.assertRaisesRegex(ValueError, "code generation is not enabled"):
-            build_render_job(analysis, design, "source_a", "source_b", None, 16, 16, 30, 2)
+        job = build_render_job(analysis, design, "source_a", "source_b", None, 16, 16, 30, 2)
+        self.assertEqual(job["effect"]["fx_id"], design["target_effect"]["effect_id"])
+        self.assertEqual(job["planning"]["decision"], "implement_new_effect")
 
     def test_score_candidate_writes_frame_and_aggregate_metrics(self) -> None:
         fake_score = type(
