@@ -1,0 +1,156 @@
+from __future__ import annotations
+
+from typing import Any
+
+
+def validate_transition_analysis(payload: dict[str, Any]) -> list[str]:
+    issues: list[str] = []
+    _require_value(payload, "artifact_type", "transition_structure", issues)
+    _require_value(payload, "artifact_version", 1, issues)
+    for field in (
+        "input_video",
+        "video_metadata",
+        "transition",
+        "visual_signals",
+        "frame_progress_mapping",
+        "evidence",
+        "limitations",
+        "planner_hints",
+    ):
+        _require_field(payload, field, issues)
+
+    video_metadata = payload.get("video_metadata")
+    if isinstance(video_metadata, dict):
+        _require_field(video_metadata, "frame_count", issues, prefix="video_metadata")
+        if not isinstance(video_metadata.get("frame_count"), int) or video_metadata.get("frame_count", 0) < 1:
+            issues.append("video_metadata.frame_count must be a positive integer")
+
+    transition = payload.get("transition")
+    if isinstance(transition, dict):
+        for field in ("style_label", "summary", "start_frame", "end_frame", "confidence"):
+            _require_field(transition, field, issues, prefix="transition")
+        _validate_confidence(transition.get("confidence"), "transition.confidence", issues)
+
+    return issues
+
+
+def validate_effect_design(payload: dict[str, Any]) -> list[str]:
+    issues: list[str] = []
+    _require_value(payload, "artifact_type", "effect_design", issues)
+    _require_value(payload, "artifact_version", 1, issues)
+    for field in ("analysis_artifact", "decision", "target_effect", "design_notes"):
+        _require_field(payload, field, issues)
+
+    decision = payload.get("decision")
+    if isinstance(decision, dict):
+        _require_field(decision, "action", issues, prefix="decision")
+        _require_field(decision, "confidence", issues, prefix="decision")
+        if decision.get("action") not in {
+            "reuse_existing_effect",
+            "tune_existing_effect",
+            "implement_new_effect",
+        }:
+            issues.append("decision.action is not a supported effect-design action")
+        _validate_confidence(decision.get("confidence"), "decision.confidence", issues)
+
+    target_effect = payload.get("target_effect")
+    if isinstance(target_effect, dict):
+        _require_field(target_effect, "family", issues, prefix="target_effect")
+
+    design_notes = payload.get("design_notes")
+    if isinstance(design_notes, dict):
+        for field in ("must_preserve", "approximations", "risks"):
+            _require_field(design_notes, field, issues, prefix="design_notes")
+
+    return issues
+
+
+def build_render_job(
+    analysis: dict[str, Any],
+    design: dict[str, Any],
+    source_a: str,
+    source_b: str,
+    reference_transition: str | None,
+    width: int,
+    height: int,
+    fps: int,
+    frame_count: int,
+) -> dict[str, Any]:
+    analysis_issues = validate_transition_analysis(analysis)
+    design_issues = validate_effect_design(design)
+    if analysis_issues or design_issues:
+        details = analysis_issues + design_issues
+        raise ValueError("invalid Codex artifacts: " + "; ".join(details))
+
+    decision = design["decision"]
+    action = decision["action"]
+    if action == "implement_new_effect":
+        raise ValueError(
+            "effect design requests implement_new_effect; code generation is not "
+            "enabled until compile/render/score validation exists"
+        )
+
+    target_effect = design["target_effect"]
+    effect_id = target_effect.get("effect_id") or target_effect.get("closest_existing_effect_id")
+    if not effect_id:
+        raise ValueError(
+            "effect design must provide target_effect.effect_id or "
+            "target_effect.closest_existing_effect_id for existing-effect rendering"
+        )
+
+    family = target_effect.get("family") or "single_pass"
+    job_name = _job_name(family, action)
+    return {
+        "job_name": job_name,
+        "effect": {
+            "fx_id": effect_id,
+            "category": target_effect.get("expected_runtime_shape") or family,
+            "effect_spec": None,
+            "uniforms": {"progress": 0.0},
+        },
+        "inputs": {
+            "source_a": source_a,
+            "source_b": source_b,
+            "reference_transition": reference_transition,
+        },
+        "render": {
+            "width": width,
+            "height": height,
+            "fps": fps,
+            "frame_count": frame_count,
+            "output_format": "png_sequence",
+        },
+        "planning": {
+            "source": "agent_effect_design",
+            "decision": action,
+            "decision_confidence": decision.get("confidence"),
+            "analysis_artifact": design.get("analysis_artifact"),
+            "analysis_style_label": analysis["transition"].get("style_label"),
+            "analysis_summary": analysis["transition"].get("summary"),
+            "design_reason": decision.get("reason"),
+            "must_preserve": design["design_notes"].get("must_preserve", []),
+            "approximations": design["design_notes"].get("approximations", []),
+            "risks": design["design_notes"].get("risks", []),
+        },
+    }
+
+
+def _require_field(payload: dict[str, Any], field: str, issues: list[str], prefix: str = "") -> None:
+    if field not in payload:
+        issues.append(f"{prefix + '.' if prefix else ''}{field} is required")
+
+
+def _require_value(payload: dict[str, Any], field: str, expected: Any, issues: list[str]) -> None:
+    if payload.get(field) != expected:
+        issues.append(f"{field} must be {expected!r}")
+
+
+def _validate_confidence(value: Any, field: str, issues: list[str]) -> None:
+    if not isinstance(value, (int, float)) or not 0 <= value <= 1:
+        issues.append(f"{field} must be a number between 0 and 1")
+
+
+def _job_name(family: str, action: str) -> str:
+    safe_family = "".join(character if character.isalnum() else "_" for character in family).strip("_")
+    safe_action = "".join(character if character.isalnum() else "_" for character in action).strip("_")
+    return f"agent_{safe_action}_{safe_family or 'effect'}"
