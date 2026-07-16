@@ -225,6 +225,25 @@ Do not promote a candidate until it compiles, renders, and has been compared
 against the same reference sequence. Candidate history belongs under the
 candidate workspace; the runtime FX ID remains unchanged.
 
+For a repeatable temporary evaluation, use `candidate-evaluate`. It stages the
+candidate into the registered source locations, builds and renders it, scores
+the result, writes an iteration report, and restores both the registered source
+files and the existing Debug DLL afterward:
+
+```powershell
+py -3 agent/src/main.py candidate-evaluate `
+  --manifest agent/work/candidates/SeamlessSliding_02/candidate_manifest.json `
+  --job agent/work/generated_boss_job.json `
+  --reference agent/work/boss_reference `
+  --output-root agent/work/candidates/SeamlessSliding_02/evaluations `
+  --backup-dir agent/work/candidates/SeamlessSliding_02/backups/evaluation_001 `
+  --width 1920 --height 1080
+```
+
+The evaluation command requires `msbuild`, the native renderer, and a job whose
+`fx_id` is the registered candidate ID. Use `candidate-promote` only after the
+evaluation passes review.
+
 After registration, build the plugin, stage the DLL through the existing
 deployment flow, render with the headless renderer, and score the candidate
 before treating the effect as validated.

@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1120" viewBox="0 0 1800 1120" role="img" aria-labelledby="title desc">
-  <title id="title">Codex Candidate Refinement Flow</title>
+  <title id="title">Codex-Driven Flow</title>
   <desc id="desc">Codex interprets and edits a transition candidate. Command-driven local tools prepare inputs, build, render, score, report, and promote the same FX ID.</desc>
   <defs>
     <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="userSpaceOnUse">
@@ -24,7 +24,7 @@
   </defs>
 
   <rect class="bg" x="0" y="0" width="1800" height="1120"/>
-  <text class="title" x="50" y="52">Codex Candidate Refinement Flow</text>
+  <text class="title" x="50" y="52">Codex-Driven Flow</text>
   <text class="small" x="50" y="82">One registered FX ID is refined in an isolated workspace; local commands provide deterministic evaluation.</text>
 
   <rect class="codex" x="1040" y="32" width="210" height="42"/>

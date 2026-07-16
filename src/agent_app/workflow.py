@@ -375,6 +375,113 @@ def build_report(
     return report
 
 
+def evaluate_candidate(
+    workspace_root: Path,
+    candidate_manifest_file: Path,
+    job_file: Path,
+    reference: Path,
+    output_root: Path,
+    backup_dir: Path,
+    msbuild: str,
+    configuration: str,
+    platform: str,
+    renderer: str | None,
+    width: int,
+    height: int,
+    frame_count: int | None,
+    ffmpeg_path: str | None,
+) -> dict[str, Any]:
+    """Temporarily stage, build, render, score, and restore a candidate."""
+    candidate = load_json(candidate_manifest_file)
+    candidate_files = [Path(path) for path in candidate.get("candidate_files", [])]
+    target_files = [Path(path) for path in candidate.get("target_files", [])]
+    if not candidate_files or len(candidate_files) != len(target_files):
+        raise ValueError("candidate manifest has invalid candidate and target files")
+    if any(not path.exists() for path in candidate_files + target_files):
+        raise FileNotFoundError("candidate or registered target source file is missing")
+
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    backups: list[tuple[Path, Path]] = []
+    for target_path in target_files:
+        backup_path = backup_dir / target_path.name
+        if backup_path.exists():
+            raise FileExistsError(f"refusing to overwrite backup file: {backup_path}")
+        shutil.copyfile(target_path, backup_path)
+        backups.append((target_path, backup_path))
+
+    target_dir = target_files[0].parent
+    target_root = target_dir.parent
+    dll_path = target_root / "x64" / configuration / "OverlayTrPlugInFx.dll"
+    dll_backup = backup_dir / dll_path.name
+    had_dll = dll_path.exists()
+    if had_dll:
+        shutil.copyfile(dll_path, dll_backup)
+
+    try:
+        for candidate_path, target_path in zip(candidate_files, target_files):
+            shutil.copyfile(candidate_path, target_path)
+        build = subprocess.run(
+            [
+                msbuild,
+                str(target_dir / "OverlayTrPlugInFx.vcxproj"),
+                f"/p:Configuration={configuration}",
+                f"/p:Platform={platform}",
+                "/m",
+            ],
+            cwd=workspace_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if build.returncode != 0:
+            raise RuntimeError(f"msbuild failed:\n{build.stdout}\n{build.stderr}")
+
+        render_result = render_job(
+            workspace_root=workspace_root,
+            job_file=job_file,
+            output_root=output_root,
+            renderer=renderer,
+        )
+        if render_result.get("status") != "succeeded":
+            raise RuntimeError(f"candidate render failed: {render_result.get('message')}")
+        run_root = Path(render_result["workspace"])
+        score_file = run_root / "reports" / "score.json"
+        score_result = score_candidate(
+            workspace_root=workspace_root,
+            candidate=Path(render_result["artifacts_dir"]),
+            reference=reference,
+            output_file=score_file,
+            width=width,
+            height=height,
+            frame_count=frame_count,
+            require_exact_frame_count=False,
+            ffmpeg_path=ffmpeg_path,
+        )
+        report_file = run_root / "reports" / "candidate_iteration_report.json"
+        report = build_report(
+            analysis_file=Path(candidate.get("analysis_artifact", "")),
+            design_file=Path(candidate.get("design_artifact", "")),
+            render_file=run_root / "render_report.json",
+            score_file=score_file,
+            output_file=report_file,
+        ) if candidate.get("analysis_artifact") and candidate.get("design_artifact") else {
+            "report_type": "agent_candidate_iteration",
+            "report_version": 1,
+            "status": "succeeded",
+            "effect_id": candidate.get("effect_id"),
+            "render": render_result,
+            "score": score_result,
+        }
+        if not report_file.exists():
+            write_json(report_file, report)
+        return {"status": "succeeded", "report": report, "report_file": str(report_file)}
+    finally:
+        for target_path, backup_path in backups:
+            shutil.copyfile(backup_path, target_path)
+        if had_dll:
+            shutil.copyfile(dll_backup, dll_path)
+
+
 def build_job_from_artifacts(
     analysis_file: Path,
     design_file: Path,

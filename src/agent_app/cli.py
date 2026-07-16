@@ -8,6 +8,7 @@ from .workflow import (
     build_job_from_artifacts,
     build_report,
     benchmark_effects,
+    evaluate_candidate,
     prepare_reference,
     prepare_sources,
     retrieve_effect,
@@ -141,6 +142,23 @@ def main(argv: list[str] | None = None) -> int:
             result = promote_candidate(
                 candidate_manifest_file=Path(args.manifest).resolve(),
                 backup_dir=Path(args.backup_dir).resolve(),
+            )
+        elif args.command == "candidate-evaluate":
+            result = evaluate_candidate(
+                workspace_root=workspace_root,
+                candidate_manifest_file=Path(args.manifest).resolve(),
+                job_file=Path(args.job).resolve(),
+                reference=Path(args.reference).resolve(),
+                output_root=Path(args.output_root).resolve(),
+                backup_dir=Path(args.backup_dir).resolve(),
+                msbuild=args.msbuild,
+                configuration=args.configuration,
+                platform=args.platform,
+                renderer=args.renderer or _default_renderer(workspace_root),
+                width=args.width,
+                height=args.height,
+                frame_count=args.frame_count,
+                ffmpeg_path=args.ffmpeg,
             )
         else:
             result = build_report(
@@ -278,6 +296,24 @@ def build_parser() -> argparse.ArgumentParser:
     )
     candidate_promote.add_argument("--manifest", required=True)
     candidate_promote.add_argument("--backup-dir", required=True)
+
+    candidate_evaluate = subparsers.add_parser(
+        "candidate-evaluate",
+        help="temporarily stage, build, render, score, and restore a candidate",
+    )
+    candidate_evaluate.add_argument("--manifest", required=True)
+    candidate_evaluate.add_argument("--job", required=True)
+    candidate_evaluate.add_argument("--reference", required=True)
+    candidate_evaluate.add_argument("--output-root", required=True)
+    candidate_evaluate.add_argument("--backup-dir", required=True)
+    candidate_evaluate.add_argument("--msbuild", default="msbuild")
+    candidate_evaluate.add_argument("--configuration", default="Debug")
+    candidate_evaluate.add_argument("--platform", default="x64")
+    candidate_evaluate.add_argument("--renderer")
+    candidate_evaluate.add_argument("--width", type=int, required=True)
+    candidate_evaluate.add_argument("--height", type=int, required=True)
+    candidate_evaluate.add_argument("--frame-count", type=int)
+    candidate_evaluate.add_argument("--ffmpeg")
 
     report = subparsers.add_parser("report", help="combine analysis, design, render, and score artifacts")
     report.add_argument("--analysis", required=True)
