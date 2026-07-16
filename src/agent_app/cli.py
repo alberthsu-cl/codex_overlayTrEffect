@@ -14,7 +14,12 @@ from .workflow import (
     render_job,
     score_candidate,
 )
-from .codegen import generate_effect, register_effect
+from .codegen import (
+    generate_effect,
+    initialize_candidate,
+    promote_candidate,
+    register_effect,
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -123,6 +128,20 @@ def main(argv: list[str] | None = None) -> int:
                     target_root=Path(args.target_root).resolve(),
                 ),
             }
+        elif args.command == "candidate-init":
+            result = {
+                "status": "succeeded",
+                "candidate": initialize_candidate(
+                    manifest_file=Path(args.manifest).resolve(),
+                    output_dir=Path(args.output_dir).resolve(),
+                    force=args.force,
+                ),
+            }
+        elif args.command == "candidate-promote":
+            result = promote_candidate(
+                candidate_manifest_file=Path(args.manifest).resolve(),
+                backup_dir=Path(args.backup_dir).resolve(),
+            )
         else:
             result = build_report(
                 analysis_file=Path(args.analysis).resolve(),
@@ -244,6 +263,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     register.add_argument("--manifest", required=True)
     register.add_argument("--target-root", required=True)
+
+    candidate_init = subparsers.add_parser(
+        "candidate-init",
+        help="copy a registered effect into an isolated refinement workspace",
+    )
+    candidate_init.add_argument("--manifest", required=True)
+    candidate_init.add_argument("--output-dir", required=True)
+    candidate_init.add_argument("--force", action="store_true")
+
+    candidate_promote = subparsers.add_parser(
+        "candidate-promote",
+        help="back up and promote a reviewed candidate into the registered FX",
+    )
+    candidate_promote.add_argument("--manifest", required=True)
+    candidate_promote.add_argument("--backup-dir", required=True)
 
     report = subparsers.add_parser("report", help="combine analysis, design, render, and score artifacts")
     report.add_argument("--analysis", required=True)

@@ -188,6 +188,43 @@ py -3 agent/src/main.py register `
   --target-root overlaytrengine
 ```
 
+### Refining A Registered Effect
+
+After an FX ID has been registered, refinement does not create another FX ID
+and does not invoke `register` again. Initialize an isolated candidate workspace
+from the registered files:
+
+```powershell
+py -3 agent/src/main.py candidate-init `
+  --manifest agent/work/boss_seamless_sliding_02_generated/manifest.json `
+  --output-dir agent/work/candidates/SeamlessSliding_02
+```
+
+Codex may then edit only the candidate C++/HLSL files under that directory.
+Use `prompts/codex_effect_refinement_prompt.md` with the transition analysis,
+effect design, latest render report, score report, and candidate source files.
+The candidate keeps the existing ID:
+
+```text
+ModelGenerated\\SeamlessSliding_02
+```
+
+Build and render the candidate after each Codex edit. Promotion is explicit and
+backs up the currently registered source files first:
+
+```powershell
+py -3 agent/src/main.py candidate-promote `
+  --manifest agent/work/candidates/SeamlessSliding_02/candidate_manifest.json `
+  --backup-dir agent/work/candidates/SeamlessSliding_02/backups/iteration_001
+
+msbuild overlaytrengine/OverlayTrPlugInFx/OverlayTrPlugInFx.vcxproj `
+  /p:Configuration=Debug /p:Platform=x64 /m
+```
+
+Do not promote a candidate until it compiles, renders, and has been compared
+against the same reference sequence. Candidate history belongs under the
+candidate workspace; the runtime FX ID remains unchanged.
+
 After registration, build the plugin, stage the DLL through the existing
 deployment flow, render with the headless renderer, and score the candidate
 before treating the effect as validated.

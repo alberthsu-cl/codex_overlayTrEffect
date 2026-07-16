@@ -12,7 +12,7 @@ AGENT_SRC = Path(__file__).resolve().parents[1] / "src"
 if str(AGENT_SRC) not in sys.path:
     sys.path.insert(0, str(AGENT_SRC))
 
-from agent_app.codegen import generate_effect, register_effect
+from agent_app.codegen import generate_effect, initialize_candidate, promote_candidate, register_effect
 
 
 class CodegenTests(unittest.TestCase):
@@ -160,6 +160,48 @@ class CodegenTests(unittest.TestCase):
             self.assertIn("0.8f", generated_cpp.read_text())
             self.assertIn("g_Tr_ModelGeneratedSeamlessSliding01_PS", (root / "generated" / "TrModelGeneratedSeamlessSliding01_ps.hlsl").read_text())
             self.assertEqual(len(manifest["generated_resources"]), 1)
+        finally:
+            for path in sorted(root.rglob("*"), reverse=True):
+                if path.is_file():
+                    path.unlink()
+                elif path.is_dir():
+                    path.rmdir()
+            root.rmdir()
+
+    def test_candidate_init_and_promote(self) -> None:
+        root = Path(__file__).resolve().parents[1] / "work" / f"candidate_test_{uuid.uuid4().hex}"
+        target_dir = root / "OverlayTrPlugInFx"
+        target_dir.mkdir(parents=True)
+        try:
+            target_files = []
+            for filename in ("TrModelGeneratedSeamlessSliding02.h", "TrModelGeneratedSeamlessSliding02.cpp"):
+                path = target_dir / filename
+                path.write_text(f"registered {filename}", encoding="utf-8")
+                target_files.append(str(path))
+            manifest_file = root / "generated_manifest.json"
+            manifest_file.write_text(
+                json.dumps({
+                    "effect_id": "ModelGenerated\\SeamlessSliding_02",
+                    "family": "seamless_slide",
+                    "registration": {"target_files": target_files},
+                }),
+                encoding="utf-8",
+            )
+
+            candidate_dir = root / "candidate"
+            initialized = initialize_candidate(manifest_file, candidate_dir)
+            candidate_source = candidate_dir / "TrModelGeneratedSeamlessSliding02.cpp"
+            candidate_source.write_text("refined candidate", encoding="utf-8")
+            backup_dir = root / "backup"
+            promoted = promote_candidate(candidate_dir / "candidate_manifest.json", backup_dir)
+
+            self.assertEqual(initialized["effect_id"], "ModelGenerated\\SeamlessSliding_02")
+            self.assertEqual(promoted["status"], "succeeded")
+            self.assertEqual((target_dir / "TrModelGeneratedSeamlessSliding02.cpp").read_text(), "refined candidate")
+            self.assertEqual(
+                (backup_dir / "TrModelGeneratedSeamlessSliding02.cpp").read_text(),
+                "registered TrModelGeneratedSeamlessSliding02.cpp",
+            )
         finally:
             for path in sorted(root.rglob("*"), reverse=True):
                 if path.is_file():

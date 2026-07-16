@@ -325,6 +325,91 @@ def register_effect(manifest_file: Path, target_root: Path) -> dict[str, Any]:
     return registration
 
 
+def initialize_candidate(
+    manifest_file: Path,
+    output_dir: Path,
+    force: bool = False,
+) -> dict[str, Any]:
+    """Copy a registered effect into an isolated workspace for Codex edits."""
+    manifest = load_json(manifest_file)
+    registration = manifest.get("registration")
+    if not isinstance(registration, dict):
+        raise ValueError("generated effect manifest has no registration data")
+    target_files = registration.get("target_files")
+    if not isinstance(target_files, list) or not target_files:
+        raise ValueError("registered effect manifest has no target files")
+    source_paths = [Path(path) for path in target_files]
+    if any(not path.exists() for path in source_paths):
+        raise FileNotFoundError("registered effect source file is missing")
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    candidate_files: list[str] = []
+    for source_path in source_paths:
+        destination = output_dir / source_path.name
+        if destination.exists() and not force:
+            raise FileExistsError(f"refusing to overwrite candidate file: {destination}")
+        shutil.copyfile(source_path, destination)
+        candidate_files.append(str(destination))
+
+    candidate_manifest = {
+        "manifest_type": "effect_candidate",
+        "manifest_version": 1,
+        "effect_id": manifest.get("effect_id"),
+        "family": manifest.get("family"),
+        "iteration": 0,
+        "source_manifest": str(manifest_file),
+        "candidate_files": candidate_files,
+        "target_files": [str(path) for path in source_paths],
+        "status": "active",
+    }
+    manifest_path = output_dir / "candidate_manifest.json"
+    write_json(manifest_path, candidate_manifest)
+    candidate_manifest["manifest_file"] = str(manifest_path)
+    return candidate_manifest
+
+
+def promote_candidate(
+    candidate_manifest_file: Path,
+    backup_dir: Path,
+) -> dict[str, Any]:
+    """Back up registered files and promote an isolated candidate in place."""
+    candidate = load_json(candidate_manifest_file)
+    candidate_files = candidate.get("candidate_files")
+    target_files = candidate.get("target_files")
+    if not isinstance(candidate_files, list) or not isinstance(target_files, list):
+        raise ValueError("candidate manifest must contain candidate_files and target_files")
+    if len(candidate_files) != len(target_files) or not candidate_files:
+        raise ValueError("candidate and target file lists must have equal non-zero length")
+    source_paths = [Path(path) for path in candidate_files]
+    target_paths = [Path(path) for path in target_files]
+    if any(not path.exists() for path in source_paths):
+        raise FileNotFoundError("candidate source file is missing")
+    if any(not path.exists() for path in target_paths):
+        raise FileNotFoundError("registered target file is missing")
+
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    backups: list[str] = []
+    for source_path, target_path in zip(source_paths, target_paths):
+        backup_path = backup_dir / target_path.name
+        if backup_path.exists():
+            raise FileExistsError(f"refusing to overwrite backup file: {backup_path}")
+        shutil.copyfile(target_path, backup_path)
+        shutil.copyfile(source_path, target_path)
+        backups.append(str(backup_path))
+
+    result = {
+        "status": "succeeded",
+        "effect_id": candidate.get("effect_id"),
+        "candidate_manifest": str(candidate_manifest_file),
+        "promoted_files": [str(path) for path in target_paths],
+        "backup_files": backups,
+    }
+    candidate["status"] = "promoted"
+    candidate["last_promotion"] = result
+    write_json(candidate_manifest_file, candidate)
+    return result
+
+
 def _update_project_filters(
     text: str,
     *,
