@@ -211,6 +211,7 @@ def register_effect(manifest_file: Path, target_root: Path) -> dict[str, Any]:
     fx_info_path = target_dir / "FxInfo.h"
     plugin_path = target_dir / "OverlayTrPlugInFx.cpp"
     project_path = target_dir / "OverlayTrPlugInFx.vcxproj"
+    filters_path = target_dir / "OverlayTrPlugInFx.vcxproj.filters"
     source_paths = [Path(path) for path in manifest.get("generated_files", [])]
     if len(source_paths) != len(_TEMPLATE_FILES) or any(not path.exists() for path in source_paths):
         raise ValueError("manifest does not contain all existing generated source files")
@@ -228,6 +229,8 @@ def register_effect(manifest_file: Path, target_root: Path) -> dict[str, Any]:
         plugin_path: _read_text_preserving_newlines(plugin_path),
         project_path: _read_text_preserving_newlines(project_path),
     }
+    if filters_path.exists():
+        raw_target_text[filters_path] = _read_text_preserving_newlines(filters_path)
     target_text = {path: content.replace("\r\n", "\n") for path, content in raw_target_text.items()}
     index_values = [int(value) for value in re.findall(r"\n\s+(\d+)\n", target_text[fx_info_path])]
     index = max(index_values, default=0) + 1
@@ -269,9 +272,20 @@ def register_effect(manifest_file: Path, target_root: Path) -> dict[str, Any]:
     shader_entry = _shader_project_entry(f"Tr{symbol}_ps.hlsl", shader_symbol)
 
     updated = dict(target_text)
-    updated[fx_info_path] = updated[fx_info_path].replace(
+    fx_info_with_include = updated[fx_info_path].replace(
         include_anchor, f'{include_anchor}\n#include "Tr{symbol}.h"', 1
-    ).replace(fx_info_anchor, fx_info_entry + fx_info_anchor, 1)
+    )
+    fx_info_prefix, fx_info_suffix = fx_info_with_include.split(fx_info_anchor, 1)
+    if not fx_info_prefix.rstrip().endswith("},"):
+        closing_brace = fx_info_prefix.rfind("}")
+        if closing_brace < 0:
+            raise ValueError("could not locate the final FX table entry")
+        fx_info_prefix = (
+            fx_info_prefix[:closing_brace]
+            + "},"
+            + fx_info_prefix[closing_brace + 1 :]
+        )
+    updated[fx_info_path] = fx_info_prefix + fx_info_entry + fx_info_anchor + fx_info_suffix
     updated[plugin_path] = updated[plugin_path].replace(switch_anchor, case + switch_anchor, 1)
     updated[project_path] = updated[project_path].replace(
         project_compile_anchor,
@@ -282,6 +296,15 @@ def register_effect(manifest_file: Path, target_root: Path) -> dict[str, Any]:
         f'{project_include_anchor}\n    <ClInclude Include="Tr{symbol}.h" />',
         1,
     ).replace(project_shader_anchor, shader_entry + "\n" + project_shader_anchor, 1)
+
+    if filters_path in updated:
+        updated[filters_path] = _update_project_filters(
+            updated[filters_path],
+            base_stem=base_stem,
+            cpp_filename=f"Tr{symbol}.cpp",
+            header_filename=f"Tr{symbol}.h",
+            shader_filename=f"Tr{symbol}_ps.hlsl",
+        )
 
     for source, destination in zip(source_paths, destination_paths):
         shutil.copyfile(source, destination)
@@ -300,6 +323,52 @@ def register_effect(manifest_file: Path, target_root: Path) -> dict[str, Any]:
     manifest["registration"] = registration
     write_json(manifest_file, manifest)
     return registration
+
+
+def _update_project_filters(
+    text: str,
+    *,
+    base_stem: str,
+    cpp_filename: str,
+    header_filename: str,
+    shader_filename: str,
+) -> str:
+    """Add generated files to the stable Solution Explorer filter."""
+    filter_name = "Transition\\ModelGenerated"
+    if f'<Filter Include="{filter_name}">' not in text:
+        filter_block = (
+            f'    <Filter Include="{filter_name}">\n'
+            "      <UniqueIdentifier>{b7cf5f0d-3d70-4b3c-8d4b-3d66d64a8421}</UniqueIdentifier>\n"
+            "    </Filter>\n"
+        )
+        text = text.replace("  </ItemGroup>", filter_block + "  </ItemGroup>", 1)
+
+    def add_after(anchor: str, entry: str) -> None:
+        nonlocal text
+        if entry not in text:
+            if anchor not in text:
+                raise ValueError(f"filter anchor not found: {anchor}")
+            text = text.replace(anchor, anchor + "\n" + entry, 1)
+
+    add_after(
+        f'    <ClCompile Include="{base_stem}.cpp">\n'
+        f'      <Filter>Transition\\{base_stem}</Filter>\n'
+        "    </ClCompile>",
+        f'    <ClCompile Include="{cpp_filename}">\n      <Filter>{filter_name}</Filter>\n    </ClCompile>',
+    )
+    add_after(
+        f'    <ClInclude Include="{base_stem}.h">\n'
+        f'      <Filter>Transition\\{base_stem}</Filter>\n'
+        "    </ClInclude>",
+        f'    <ClInclude Include="{header_filename}">\n      <Filter>{filter_name}</Filter>\n    </ClInclude>',
+    )
+    add_after(
+        f'    <FxCompile Include="{base_stem}_ps.hlsl">\n'
+        f'      <Filter>Transition\\{base_stem}</Filter>\n'
+        "    </FxCompile>",
+        f'    <FxCompile Include="{shader_filename}">\n      <Filter>{filter_name}</Filter>\n    </FxCompile>',
+    )
+    return text
 
 
 def _shader_project_entry(filename: str, shader_symbol: str) -> str:
