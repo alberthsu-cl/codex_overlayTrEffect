@@ -480,6 +480,7 @@ def evaluate_candidate(
     target_dir = target_files[0].parent
     target_root = target_dir.parent
     dll_path = target_root / "x64" / configuration / "OverlayTrPlugInFx.dll"
+    build_dll_path = target_dir / "x64" / configuration / "OverlayTrPlugInFx.dll"
     dll_backup = backup_dir / dll_path.name
     had_dll = dll_path.exists()
     if had_dll:
@@ -505,6 +506,9 @@ def evaluate_candidate(
         )
         if build.returncode != 0:
             raise RuntimeError(f"msbuild failed:\n{build.stdout}\n{build.stderr}")
+        if not build_dll_path.exists():
+            raise FileNotFoundError(f"candidate build did not produce plugin DLL: {build_dll_path}")
+        shutil.copyfile(build_dll_path, dll_path)
 
         render_result = render_job(
             workspace_root=workspace_root,

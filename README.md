@@ -77,6 +77,19 @@ of the workflow, plus the first local execution slice:
 The local execution layer reuses the existing `harness` implementation through
 an explicit bridge. It does not import the old analyzer or planner.
 
+## Runtime Environment
+
+Run local agent commands through the existing Conda environment:
+
+```powershell
+conda run -n harness py -3 agent/src/main.py <command>
+```
+
+Do not rely on `conda activate` persisting between Codex command processes.
+The `harness` environment provides the required Python dependencies and
+`ffmpeg` for PNG scoring. In the command examples below, replace each
+`py -3 agent/src/main.py` prefix with `conda run -n harness py -3 agent/src/main.py`.
+
 ## First Local Commands
 
 Run these commands from `D:\\AI_Harness`:

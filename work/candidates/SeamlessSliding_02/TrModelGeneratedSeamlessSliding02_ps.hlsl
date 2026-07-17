@@ -37,9 +37,8 @@ float4 Pixel_Shader(PS_INPUT input) : SV_TARGET
     float4 f4Result0 = float4(0.0, 0.0, 0.0, 0.0);
     float4 f4Result1 = float4(0.0, 0.0, 0.0, 0.0);
     float4 f4Result = float4(0.0, 0.0, 0.0, 0.0);
-    float bandIndex = floor(input.Tex.y * 8.0);
-    float bandSign = fmod(bandIndex, 2.0) == 0.0 ? 1.0 : -1.0;
-    float2 f2BandDirection = f2Direction * bandSign;
+    float regionSign = input.Tex.y < 0.5 ? 1.0 : -1.0;
+    float2 f2BandDirection = f2Direction * regionSign;
 
     if ((!bSpeedUp) || (bSpeedUp && nTxIndex == 0))
     {
