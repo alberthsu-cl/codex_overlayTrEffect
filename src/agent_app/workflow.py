@@ -11,6 +11,7 @@ from typing import Any
 from .harness_bridge import load_harness_modules
 from .io import load_json, write_json
 from .artifacts import build_render_job
+from .candidate_controller import record_candidate_evaluation
 
 
 def prepare_reference(
@@ -403,6 +404,90 @@ def _encode_artifact_video(
     }
 
 
+def _create_comparison_assets(
+    artifacts_dir: Path,
+    reference_dir: Path,
+    fps: int,
+    frame_start: int | None,
+    frame_end: int | None,
+    ffmpeg_path: str | None,
+) -> dict[str, Any]:
+    ffmpeg_executable = ffmpeg_path or shutil.which("ffmpeg")
+    if not ffmpeg_executable:
+        return {"status": "skipped", "message": "ffmpeg was not found"}
+    if not (artifacts_dir / "frame_0000.png").exists() or not (reference_dir / "frame_0000.png").exists():
+        return {"status": "skipped", "message": "candidate or reference PNG sequence is incomplete"}
+
+    reference_video = artifacts_dir / "reference_transition.mp4"
+    full_comparison = artifacts_dir / "comparison_side_by_side.mp4"
+    outputs = {
+        "reference_video": _run_ffmpeg(
+            [
+                "-y", "-framerate", str(fps), "-start_number", "0", "-i", str(reference_dir / "frame_%04d.png"),
+                "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p", str(reference_video),
+            ],
+            ffmpeg_executable,
+        ),
+        "side_by_side_video": _run_ffmpeg(
+            _comparison_command(
+                artifacts_dir, reference_dir, fps, 0, None, full_comparison
+            ),
+            ffmpeg_executable,
+        ),
+    }
+    if frame_start is not None and frame_end is not None:
+        if frame_start < 0 or frame_end < frame_start:
+            raise ValueError("comparison frame window is invalid")
+        window_video = artifacts_dir / "comparison_transition_window.mp4"
+        outputs["transition_window_video"] = _run_ffmpeg(
+            _comparison_command(
+                artifacts_dir,
+                reference_dir,
+                fps,
+                frame_start,
+                frame_end - frame_start + 1,
+                window_video,
+            ),
+            ffmpeg_executable,
+        )
+    return {"status": "succeeded", "fps": fps, **outputs}
+
+
+def _comparison_command(
+    artifacts_dir: Path,
+    reference_dir: Path,
+    fps: int,
+    start_number: int,
+    frame_count: int | None,
+    output_file: Path,
+) -> list[str]:
+    command = [
+        "-y",
+        "-framerate", str(fps), "-start_number", str(start_number), "-i", str(artifacts_dir / "frame_%04d.png"),
+        "-framerate", str(fps), "-start_number", str(start_number), "-i", str(reference_dir / "frame_%04d.png"),
+        "-filter_complex", "[0:v][1:v]hstack=inputs=2",
+    ]
+    if frame_count is not None:
+        command.extend(["-frames:v", str(frame_count)])
+    command.extend(["-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p", str(output_file)])
+    return command
+
+
+def _run_ffmpeg(arguments: list[str], ffmpeg_executable: str) -> dict[str, Any]:
+    completed = subprocess.run(
+        [ffmpeg_executable, *arguments],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return {
+        "status": "succeeded" if completed.returncode == 0 else "failed",
+        "file": arguments[-1],
+        "exit_code": completed.returncode,
+        "stderr": completed.stderr if completed.returncode else "",
+    }
+
+
 def score_candidate(
     workspace_root: Path,
     candidate: Path,
@@ -438,6 +523,7 @@ def score_candidate(
                 endpoint_frame_count=endpoint_frame_count,
             )
         )
+        score["transition_diagnostics"] = _build_transition_diagnostics(score)
     score["status"] = "succeeded"
     write_json(output_file, score)
     return score
@@ -475,6 +561,32 @@ def _build_windowed_score(
             "before_transition": _aggregate_frame_scores(before_frames) if before_frames else None,
             "after_transition": _aggregate_frame_scores(after_frames) if after_frames else None,
         },
+    }
+
+
+def _build_transition_diagnostics(score: dict[str, Any]) -> dict[str, Any]:
+    window = score["transition_window"]
+    frames = score["frames"]
+    start = int(window["frame_start"])
+    end = int(window["frame_end"])
+    details = [
+        {
+            "frame_index": index,
+            "mse": frame["mse"],
+            "mae": frame["mae"],
+            "ssim": frame["ssim"],
+            "candidate_frame": frame.get("candidate_frame"),
+            "reference_frame": frame.get("reference_frame"),
+        }
+        for index, frame in enumerate(frames[start : end + 1], start=start)
+    ]
+    return {
+        "frame_count": len(details),
+        "worst_mse_frames": sorted(details, key=lambda item: float(item["mse"]), reverse=True)[:5],
+        "lowest_ssim_frames": sorted(
+            details,
+            key=lambda item: float(item["ssim"]) if item["ssim"] is not None else float("inf"),
+        )[:5],
     }
 
 
@@ -532,6 +644,7 @@ def evaluate_candidate(
     frame_start: int | None = None,
     frame_end: int | None = None,
     endpoint_frame_count: int = 3,
+    iteration: int | None = None,
 ) -> dict[str, Any]:
     """Stage, build, render, and score a candidate, optionally restoring it afterward."""
     candidate = load_json(candidate_manifest_file)
@@ -609,6 +722,20 @@ def evaluate_candidate(
             frame_end=frame_end,
             endpoint_frame_count=endpoint_frame_count,
         )
+        render_job_definition = load_json(job_file)
+        render_settings = render_job_definition.get("render", {})
+        fps = render_settings.get("fps", 30)
+        if not isinstance(fps, int) or fps < 1:
+            raise ValueError("candidate evaluation job has invalid render.fps")
+        comparison = _create_comparison_assets(
+            artifacts_dir=Path(render_result["artifacts_dir"]),
+            reference_dir=reference,
+            fps=fps,
+            frame_start=frame_start,
+            frame_end=frame_end,
+            ffmpeg_path=ffmpeg_path,
+        )
+        write_json(run_root / "reports" / "comparison_assets.json", comparison)
         report_file = run_root / "reports" / "candidate_iteration_report.json"
         report = build_report(
             analysis_file=Path(candidate.get("analysis_artifact", "")),
@@ -624,9 +751,23 @@ def evaluate_candidate(
             "render": render_result,
             "score": score_result,
         }
-        if not report_file.exists():
-            write_json(report_file, report)
-        return {"status": "succeeded", "report": report, "report_file": str(report_file)}
+        report["comparison"] = comparison
+        write_json(report_file, report)
+        controller = (
+            record_candidate_evaluation(
+                candidate_manifest_file=candidate_manifest_file,
+                iteration=iteration,
+                report_file=report_file,
+            )
+            if iteration is not None
+            else None
+        )
+        return {
+            "status": "succeeded",
+            "report": report,
+            "report_file": str(report_file),
+            "controller": controller,
+        }
     finally:
         if restore:
             for target_path, backup_path in backups:

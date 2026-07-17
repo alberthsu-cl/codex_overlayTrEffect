@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 import sys
 import unittest
+import uuid
 from unittest.mock import patch
 
 
@@ -12,15 +14,91 @@ if str(AGENT_SRC) not in sys.path:
 
 from agent_app.workflow import (
     _encode_artifact_video,
+    _create_comparison_assets,
     build_report,
     prepare_sources,
     retrieve_effect,
     score_candidate,
 )
 from agent_app.artifacts import build_render_job
+from agent_app.candidate_controller import (
+    build_next_iteration_packet,
+    record_candidate_evaluation,
+    set_candidate_baseline,
+)
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_controller_tracks_baseline_and_evaluation_outcome(self) -> None:
+        root = Path(__file__).resolve().parents[1] / "work" / f"controller_test_{uuid.uuid4().hex}"
+        candidate_dir = root / "candidate"
+        candidate_dir.mkdir(parents=True)
+        manifest = candidate_dir / "candidate_manifest.json"
+        report = candidate_dir / "baseline_report.json"
+        analysis = candidate_dir / "analysis.json"
+        design = candidate_dir / "design.json"
+        try:
+            manifest.write_text(json.dumps({"effect_id": "ModelGenerated\\Test", "candidate_files": []}), encoding="utf-8")
+            analysis.write_text("{}", encoding="utf-8")
+            design.write_text("{}", encoding="utf-8")
+            self._write_controller_report(report, mse=10.0, ssim=0.9)
+            state = set_candidate_baseline(manifest, iteration=1, report_file=report)
+            self.assertEqual(state["status"], "succeeded")
+            self.assertEqual(state["state"]["baseline"]["iteration"], 1)
+
+            packet = build_next_iteration_packet(
+                candidate_manifest_file=manifest,
+                analysis_file=analysis,
+                design_file=design,
+                max_iterations=3,
+                max_rejected=2,
+            )
+            self.assertEqual(packet["iteration"], 2)
+            self.assertTrue(Path(packet["prompt_file"]).exists())
+
+            iteration_file = candidate_dir / "iteration_002_regions.json"
+            iteration_file.write_text(
+                json.dumps({"iteration": 2, "hypothesis_category": "regions", "status": "candidate_only"}),
+                encoding="utf-8",
+            )
+            improved_report = candidate_dir / "improved_report.json"
+            self._write_controller_report(improved_report, mse=9.0, ssim=0.91)
+            outcome = record_candidate_evaluation(manifest, 2, improved_report)
+            self.assertEqual(outcome["status"], "accepted")
+            record = json.loads(iteration_file.read_text(encoding="utf-8"))
+            self.assertEqual(record["status"], "accepted")
+        finally:
+            for path in sorted(root.rglob("*"), reverse=True):
+                if path.is_file():
+                    path.unlink()
+                elif path.is_dir():
+                    path.rmdir()
+            root.rmdir()
+
+    def _write_controller_report(self, path: Path, mse: float, ssim: float) -> None:
+        path.write_text(
+            json.dumps(
+                {
+                    "score": {
+                        "transition_window": {
+                            "frame_start": 2,
+                            "frame_end": 4,
+                            "frame_count": 3,
+                            "mse": mse,
+                            "mae": 1.0,
+                            "psnr_db": 20.0,
+                            "ssim": ssim,
+                        },
+                        "endpoint_checks": {
+                            "before_transition": {"mse": 0.0, "ssim": 1.0},
+                            "after_transition": {"mse": 0.0, "ssim": 1.0},
+                        },
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+
     def test_encode_artifact_video_uses_png_sequence_and_job_fps(self) -> None:
         with self.subTest("successful encode"):
             artifacts_dir = Path(__file__).parent / "fixtures" / "render_artifacts"
@@ -37,6 +115,24 @@ class WorkflowTests(unittest.TestCase):
                 self.assertEqual(run.call_args.args[0][0], "C:/tools/ffmpeg.exe")
                 self.assertIn("frame_%04d.png", run.call_args.args[0])
                 self.assertIn("rendered_transition.mp4", run.call_args.args[0])
+
+    def test_create_comparison_assets_encodes_reference_and_window(self) -> None:
+        artifacts_dir = Path(__file__).parent / "fixtures" / "render_artifacts"
+        completed = type("Completed", (), {"returncode": 0, "stderr": ""})()
+        with patch("agent_app.workflow.subprocess.run", return_value=completed) as run:
+            result = _create_comparison_assets(
+                artifacts_dir=artifacts_dir,
+                reference_dir=artifacts_dir,
+                fps=30,
+                frame_start=2,
+                frame_end=4,
+                ffmpeg_path="C:/tools/ffmpeg.exe",
+            )
+
+        self.assertEqual(result["status"], "succeeded")
+        self.assertEqual(result["reference_video"]["status"], "succeeded")
+        self.assertEqual(result["transition_window_video"]["status"], "succeeded")
+        self.assertEqual(run.call_count, 3)
 
     def test_retrieve_effect_returns_catalog_match(self) -> None:
         analysis = {
@@ -276,6 +372,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(result["transition_window"]["frame_count"], 2)
         self.assertEqual(result["endpoint_checks"]["before_transition"]["mse"], 0.0)
         self.assertEqual(result["endpoint_checks"]["after_transition"]["mse"], 6.0)
+        self.assertEqual(result["transition_diagnostics"]["worst_mse_frames"][0]["frame_index"], 2)
         write_json.assert_called_once()
 
     def test_build_report_preserves_all_artifacts(self) -> None:

@@ -21,6 +21,11 @@ from .codegen import (
     promote_candidate,
     register_effect,
 )
+from .candidate_controller import (
+    build_next_iteration_packet,
+    candidate_status,
+    set_candidate_baseline,
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -167,7 +172,24 @@ def main(argv: list[str] | None = None) -> int:
                 frame_start=args.frame_start,
                 frame_end=args.frame_end,
                 endpoint_frame_count=args.endpoint_frame_count,
+                iteration=args.iteration,
             )
+        elif args.command == "candidate-set-baseline":
+            result = set_candidate_baseline(
+                candidate_manifest_file=Path(args.manifest).resolve(),
+                iteration=args.iteration,
+                report_file=Path(args.report).resolve(),
+            )
+        elif args.command == "candidate-next":
+            result = build_next_iteration_packet(
+                candidate_manifest_file=Path(args.manifest).resolve(),
+                analysis_file=Path(args.analysis).resolve(),
+                design_file=Path(args.design).resolve(),
+                max_iterations=args.max_iterations,
+                max_rejected=args.max_rejected,
+            )
+        elif args.command == "candidate-status":
+            result = candidate_status(Path(args.manifest).resolve())
         else:
             result = build_report(
                 analysis_file=Path(args.analysis).resolve(),
@@ -330,10 +352,39 @@ def build_parser() -> argparse.ArgumentParser:
     candidate_evaluate.add_argument("--frame-end", type=int)
     candidate_evaluate.add_argument("--endpoint-frame-count", type=int, default=3)
     candidate_evaluate.add_argument(
+        "--iteration",
+        type=int,
+        help="record this evaluation in the controller state and matching iteration record",
+    )
+    candidate_evaluate.add_argument(
         "--restore",
         action="store_true",
         help="restore registered target sources and the Debug plugin DLL after evaluation",
     )
+
+    candidate_baseline = subparsers.add_parser(
+        "candidate-set-baseline",
+        help="select a valid scored iteration as the controller baseline",
+    )
+    candidate_baseline.add_argument("--manifest", required=True)
+    candidate_baseline.add_argument("--iteration", required=True, type=int)
+    candidate_baseline.add_argument("--report", required=True)
+
+    candidate_next = subparsers.add_parser(
+        "candidate-next",
+        help="prepare the next refinement packet and Codex request",
+    )
+    candidate_next.add_argument("--manifest", required=True)
+    candidate_next.add_argument("--analysis", required=True)
+    candidate_next.add_argument("--design", required=True)
+    candidate_next.add_argument("--max-iterations", type=int, default=20)
+    candidate_next.add_argument("--max-rejected", type=int, default=8)
+
+    candidate_status_cmd = subparsers.add_parser(
+        "candidate-status",
+        help="show controller baseline, history, budgets, and blocked hypothesis categories",
+    )
+    candidate_status_cmd.add_argument("--manifest", required=True)
 
     report = subparsers.add_parser("report", help="combine analysis, design, render, and score artifacts")
     report.add_argument("--analysis", required=True)

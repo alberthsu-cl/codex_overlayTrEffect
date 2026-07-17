@@ -273,6 +273,56 @@ Each successful render also encodes its PNG sequence as
 quick visual review; scoring continues to use the original PNG frames. The
 command finds `ffmpeg` on `PATH`, or accepts an explicit `--ffmpeg` path.
 
+Successful `candidate-evaluate` runs additionally write these review assets in
+the same `artifacts` directory:
+
+- `reference_transition.mp4`
+- `comparison_side_by_side.mp4`
+- `comparison_transition_window.mp4`
+
+The score report also includes `transition_diagnostics` with the five worst MSE
+frames and five lowest-SSIM frames in the configured transition window.
+
+### Stateful refinement loop
+
+The controller keeps candidate-local history in `candidate_state.json`. It does
+not invoke Codex itself; it prepares the bounded iteration packet, tracks the
+accepted baseline, and records the result after the candidate is evaluated.
+
+First select the verified baseline:
+
+```powershell
+conda run -n harness py -3 agent/src/main.py candidate-set-baseline `
+  --manifest agent/work/candidates/SeamlessSliding_02/candidate_manifest.json `
+  --iteration 5 `
+  --report agent/work/candidates/SeamlessSliding_02/evaluations/<baseline-run>/reports/candidate_iteration_report.json
+```
+
+Then prepare the next bounded refinement request:
+
+```powershell
+conda run -n harness py -3 agent/src/main.py candidate-next `
+  --manifest agent/work/candidates/SeamlessSliding_02/candidate_manifest.json `
+  --analysis agent/work/boss_transition_structure.json `
+  --design agent/work/boss_effect_design.json `
+  --max-iterations 20 `
+  --max-rejected 8
+```
+
+Read the emitted `iteration_XXX_codex_request.md` in the candidate `packets`
+folder and use it as the Codex editing request. Codex edits only the candidate
+workspace and adds one `iteration_XXX_*.json` record with a
+`hypothesis_category`. Evaluate that edit with `candidate-evaluate --iteration
+XXX`; the controller classifies it as `accepted`, `tradeoff`, or `rejected` and
+updates the selected baseline only for accepted results.
+
+Use `candidate-status --manifest <candidate_manifest>` to inspect the current
+baseline, evaluation history, and blocked categories. Three rejected trials in
+one category block that category from future packets. The selection policy
+requires exact endpoint checks, then prefers preserving or improving both MSE
+and SSIM; a one-metric improvement is recorded as a tradeoff rather than
+silently replacing the baseline.
+
 After registration, build the plugin, stage the DLL through the existing
 deployment flow, render with the headless renderer, and score the candidate
 before treating the effect as validated.
