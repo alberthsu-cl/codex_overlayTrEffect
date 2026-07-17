@@ -225,10 +225,12 @@ Do not promote a candidate until it compiles, renders, and has been compared
 against the same reference sequence. Candidate history belongs under the
 candidate workspace; the runtime FX ID remains unchanged.
 
-For a repeatable temporary evaluation, use `candidate-evaluate`. It stages the
-candidate into the registered source locations, builds and renders it, scores
-the result, writes an iteration report, and restores both the registered source
-files and the existing Debug DLL afterward:
+Use `candidate-evaluate` to stage the candidate into the registered source
+locations, build and render it, score the result, and write an iteration report.
+By default, the candidate sources and rebuilt Debug plugin DLL remain staged so
+you can open `OverlayTrTool` and inspect the effect. Add `--restore` when an
+isolated evaluation should put the registered source files and Debug DLL back
+afterward:
 
 ```powershell
 py -3 agent/src/main.py candidate-evaluate `
@@ -241,8 +243,9 @@ py -3 agent/src/main.py candidate-evaluate `
 ```
 
 The evaluation command requires `msbuild`, the native renderer, and a job whose
-`fx_id` is the registered candidate ID. Use `candidate-promote` only after the
-evaluation passes review.
+`fx_id` is the registered candidate ID. Each evaluation still creates a backup
+under `--backup-dir`; use `candidate-promote` only when you want to promote a
+reviewed candidate independently of evaluation.
 
 After registration, build the plugin, stage the DLL through the existing
 deployment flow, render with the headless renderer, and score the candidate

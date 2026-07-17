@@ -159,6 +159,7 @@ def main(argv: list[str] | None = None) -> int:
                 height=args.height,
                 frame_count=args.frame_count,
                 ffmpeg_path=args.ffmpeg,
+                restore=args.restore,
             )
         else:
             result = build_report(
@@ -299,7 +300,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     candidate_evaluate = subparsers.add_parser(
         "candidate-evaluate",
-        help="temporarily stage, build, render, score, and restore a candidate",
+        help="stage, build, render, and score a candidate",
     )
     candidate_evaluate.add_argument("--manifest", required=True)
     candidate_evaluate.add_argument("--job", required=True)
@@ -314,6 +315,11 @@ def build_parser() -> argparse.ArgumentParser:
     candidate_evaluate.add_argument("--height", type=int, required=True)
     candidate_evaluate.add_argument("--frame-count", type=int)
     candidate_evaluate.add_argument("--ffmpeg")
+    candidate_evaluate.add_argument(
+        "--restore",
+        action="store_true",
+        help="restore registered target sources and the Debug plugin DLL after evaluation",
+    )
 
     report = subparsers.add_parser("report", help="combine analysis, design, render, and score artifacts")
     report.add_argument("--analysis", required=True)

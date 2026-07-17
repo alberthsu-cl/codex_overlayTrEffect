@@ -14,11 +14,10 @@ typedef struct tagPS_SLSLIDE_PARAM
 	INT      bSpeedUp;
 	FLOAT    fMixRate;
 	XMFLOAT2 f2AspectRatio;//(AspectX, AspectY)
-	XMFLOAT2 f2DirectionUpper;//(DirectionX, DirectionY) for the upper region
-	XMFLOAT2 f2DirectionLower;//(DirectionX, DirectionY) for the lower region
+	XMFLOAT2 f2Direction;//(DirectionX, DirectionY)
 	XMFLOAT4 f4DistanceTable[MAX_SAMPLE_COUNT_PRODUCTION]; //.zw = padding
 	tagPS_SLSLIDE_PARAM() :
-		nSampleCount(5), nTxIndex(0), bSpeedUp(1), fMixRate(0.0), f2AspectRatio(1.0f, 1.0f), f2DirectionUpper(0.0f, 1.0f), f2DirectionLower(0.0f, 1.0f)
+		nSampleCount(5), nTxIndex(0), bSpeedUp(1), fMixRate(0.0), f2AspectRatio(1.0f, 1.0f), f2Direction(0.0f, 1.0f)
 	{
 		for (INT i = 0; i < MAX_SAMPLE_COUNT_PRODUCTION; i += 1)
 		{
@@ -28,18 +27,18 @@ typedef struct tagPS_SLSLIDE_PARAM
 
 } PS_SLSLIDE_PARAM;
 
+static_assert(sizeof(PS_SLSLIDE_PARAM) == 512, "PS parameter layout must match the shader constant buffer");
+
 CTrModelGeneratedSeamlessSliding02::CTrModelGeneratedSeamlessSliding02(HINSTANCE hInst, const WCHAR* wszReferencePath)
 	: CFxBase(hInst, wszReferencePath)
 	, m_llTotalDuration(0)
 	, m_llMaxDuration(0)
-	, m_f2DirectionUpper(0.0f, 0.0f)
-	, m_f2DirectionLower(0.0f, 0.0f)
+	, m_f2Direction(0.0f, 0.0f)
 	, m_pfGaussianArray(NULL)
 {
 	m_llTotalDuration = 18000000;
 	m_llMaxDuration = 18000000;
-	m_f2DirectionUpper = XMFLOAT2(-1.2f, 0.0f);
-	m_f2DirectionLower = XMFLOAT2(1.2f, 0.0f);
+	m_f2Direction = XMFLOAT2(-1.2f, 0.0f);
 
 	m_pfGaussianArray = new FLOAT[MAX_SAMPLE_COUNT_PRODUCTION];
 
@@ -106,8 +105,7 @@ HRESULT CTrModelGeneratedSeamlessSliding02::UpdatePSParam(void* pPSParam)
 		return E_INVALIDARG;
 
 	PS_SLSLIDE_PARAM* pMyPSParam = (PS_SLSLIDE_PARAM*)pPSParam;
-	pMyPSParam->f2DirectionUpper = m_f2DirectionUpper;
-	pMyPSParam->f2DirectionLower = m_f2DirectionLower;
+	pMyPSParam->f2Direction = m_f2Direction;
 	pMyPSParam->bSpeedUp = 1;
 
 	pMyPSParam->f2AspectRatio = XMFLOAT2(1.0f, 1.0f);

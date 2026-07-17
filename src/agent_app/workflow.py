@@ -391,8 +391,9 @@ def evaluate_candidate(
     height: int,
     frame_count: int | None,
     ffmpeg_path: str | None,
+    restore: bool = False,
 ) -> dict[str, Any]:
-    """Temporarily stage, build, render, score, and restore a candidate."""
+    """Stage, build, render, and score a candidate, optionally restoring it afterward."""
     candidate = load_json(candidate_manifest_file)
     candidate_files = [Path(path) for path in candidate.get("candidate_files", [])]
     target_files = [Path(path) for path in candidate.get("target_files", [])]
@@ -479,10 +480,11 @@ def evaluate_candidate(
             write_json(report_file, report)
         return {"status": "succeeded", "report": report, "report_file": str(report_file)}
     finally:
-        for target_path, backup_path in backups:
-            shutil.copyfile(backup_path, target_path)
-        if had_dll:
-            shutil.copyfile(dll_backup, dll_path)
+        if restore:
+            for target_path, backup_path in backups:
+                shutil.copyfile(backup_path, target_path)
+            if had_dll:
+                shutil.copyfile(dll_backup, dll_path)
 
 
 def build_job_from_artifacts(

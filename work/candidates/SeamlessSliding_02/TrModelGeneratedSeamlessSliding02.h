@@ -18,7 +18,6 @@ private:
 
 	LONGLONG m_llTotalDuration;
 	LONGLONG m_llMaxDuration;
-	XMFLOAT2 m_f2DirectionUpper;
-	XMFLOAT2 m_f2DirectionLower;
+	XMFLOAT2 m_f2Direction;
 	FLOAT* m_pfGaussianArray;
 };
