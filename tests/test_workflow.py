@@ -24,6 +24,7 @@ from agent_app.artifacts import build_render_job
 from agent_app.candidate_controller import (
     build_next_iteration_packet,
     record_candidate_evaluation,
+    restore_candidate_baseline,
     set_candidate_baseline,
 )
 
@@ -34,17 +35,38 @@ class WorkflowTests(unittest.TestCase):
         candidate_dir = root / "candidate"
         candidate_dir.mkdir(parents=True)
         manifest = candidate_dir / "candidate_manifest.json"
+        candidate_source = candidate_dir / "Candidate.h"
+        target_source = root / "target" / "Candidate.h"
         report = candidate_dir / "baseline_report.json"
         analysis = candidate_dir / "analysis.json"
         design = candidate_dir / "design.json"
         try:
-            manifest.write_text(json.dumps({"effect_id": "ModelGenerated\\Test", "candidate_files": []}), encoding="utf-8")
+            candidate_source.write_text("baseline", encoding="utf-8")
+            target_source.parent.mkdir()
+            target_source.write_text("baseline", encoding="utf-8")
+            manifest.write_text(
+                json.dumps(
+                    {
+                        "effect_id": "ModelGenerated\\Test",
+                        "candidate_files": [str(candidate_source)],
+                        "target_files": [str(target_source)],
+                    }
+                ),
+                encoding="utf-8",
+            )
             analysis.write_text("{}", encoding="utf-8")
             design.write_text("{}", encoding="utf-8")
             self._write_controller_report(report, mse=10.0, ssim=0.9)
             state = set_candidate_baseline(manifest, iteration=1, report_file=report)
             self.assertEqual(state["status"], "succeeded")
             self.assertEqual(state["state"]["baseline"]["iteration"], 1)
+            self.assertTrue((candidate_dir / "baselines" / "iteration_001" / "Candidate.h").exists())
+            candidate_source.write_text("rejected", encoding="utf-8")
+            target_source.write_text("rejected", encoding="utf-8")
+            restored = restore_candidate_baseline(manifest)
+            self.assertEqual(restored["baseline_iteration"], 1)
+            self.assertEqual(candidate_source.read_text(encoding="utf-8"), "baseline")
+            self.assertEqual(target_source.read_text(encoding="utf-8"), "baseline")
 
             packet = build_next_iteration_packet(
                 candidate_manifest_file=manifest,

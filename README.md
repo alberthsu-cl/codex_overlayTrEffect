@@ -298,6 +298,17 @@ conda run -n harness py -3 agent/src/main.py candidate-set-baseline `
   --report agent/work/candidates/SeamlessSliding_02/evaluations/<baseline-run>/reports/candidate_iteration_report.json
 ```
 
+The command snapshots the candidate source files under
+`baselines/iteration_XXX/`. If the selected baseline must be reconstructed
+from an evaluation backup, pass that backup directory through `--source-dir`.
+After a rejected or tradeoff iteration has been reviewed, restore the selected
+baseline before starting a new hypothesis:
+
+```powershell
+conda run -n harness py -3 agent/src/main.py candidate-restore-baseline `
+  --manifest agent/work/candidates/SeamlessSliding_02/candidate_manifest.json
+```
+
 Then prepare the next bounded refinement request:
 
 ```powershell

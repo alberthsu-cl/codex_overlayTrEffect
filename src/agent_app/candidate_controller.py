@@ -1,0 +1,455 @@
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from pathlib import Path
+import re
+import shutil
+from typing import Any
+
+from .io import load_json, write_json
+
+
+STATE_FILE_NAME = "candidate_state.json"
+ITERATION_PATTERN = re.compile(r"^iteration_(\d+)_.*\.json$")
+HYPOTHESIS_CATEGORIES = (
+    "timing",
+    "regions",
+    "displacement",
+    "blur",
+    "blend",
+    "shader_structure",
+    "other",
+)
+
+
+def set_candidate_baseline(
+    candidate_manifest_file: Path,
+    iteration: int,
+    report_file: Path,
+    source_dir: Path | None = None,
+) -> dict[str, Any]:
+    state = _load_or_create_state(candidate_manifest_file)
+    metrics = _metrics_from_report(load_json(report_file))
+    if not _endpoints_are_exact(metrics):
+        raise ValueError("cannot set a baseline with non-exact endpoint checks")
+    snapshot_dir = _snapshot_baseline_sources(
+        candidate_manifest_file,
+        iteration,
+        source_dir or candidate_manifest_file.parent,
+    )
+    state["baseline"] = {
+        "iteration": iteration,
+        "report_file": str(report_file),
+        "metrics": metrics,
+        "source_snapshot": str(snapshot_dir),
+        "selected_at": _timestamp(),
+    }
+    _upsert_history(state, iteration, "baseline", "accepted", metrics, str(report_file))
+    _write_state(candidate_manifest_file, state)
+    return {"status": "succeeded", "state": state}
+
+
+def restore_candidate_baseline(candidate_manifest_file: Path) -> dict[str, Any]:
+    state = _load_or_create_state(candidate_manifest_file)
+    baseline = state.get("baseline")
+    if not isinstance(baseline, dict):
+        raise ValueError("candidate has no selected baseline")
+    snapshot_dir = Path(str(baseline.get("source_snapshot", "")))
+    if not snapshot_dir.is_dir():
+        raise FileNotFoundError("selected baseline has no source snapshot")
+    candidate = load_json(candidate_manifest_file)
+    candidate_files = [Path(path) for path in candidate.get("candidate_files", [])]
+    target_files = [Path(path) for path in candidate.get("target_files", [])]
+    if not candidate_files or len(candidate_files) != len(target_files):
+        raise ValueError("candidate manifest has invalid candidate and target files")
+    restored: list[str] = []
+    for candidate_file, target_file in zip(candidate_files, target_files):
+        source = snapshot_dir / candidate_file.name
+        if not source.exists():
+            raise FileNotFoundError(f"baseline snapshot is missing {source.name}")
+        shutil.copyfile(source, candidate_file)
+        shutil.copyfile(source, target_file)
+        restored.append(str(candidate_file))
+    return {
+        "status": "succeeded",
+        "effect_id": state["effect_id"],
+        "baseline_iteration": baseline["iteration"],
+        "source_snapshot": str(snapshot_dir),
+        "restored_files": restored,
+    }
+
+
+def build_next_iteration_packet(
+    candidate_manifest_file: Path,
+    analysis_file: Path,
+    design_file: Path,
+    max_iterations: int,
+    max_rejected: int,
+) -> dict[str, Any]:
+    state = _load_or_create_state(candidate_manifest_file)
+    candidate_dir = candidate_manifest_file.parent
+    iteration_records = _iteration_records(candidate_dir)
+    known_iterations = [item[0] for item in iteration_records]
+    known_iterations.extend(
+        int(item["iteration"])
+        for item in state["history"]
+        if isinstance(item.get("iteration"), int)
+    )
+    if state["baseline"] is not None:
+        known_iterations.append(int(state["baseline"]["iteration"]))
+    last_iteration = max(known_iterations, default=0)
+    next_iteration = last_iteration + 1
+    if next_iteration > max_iterations:
+        raise ValueError(
+            f"iteration budget exhausted: next iteration {next_iteration} exceeds {max_iterations}"
+        )
+
+    rejected_count = sum(
+        1 for item in state["history"] if item.get("status") == "rejected"
+    )
+    if rejected_count >= max_rejected:
+        raise ValueError(
+            f"rejected-iteration budget exhausted: {rejected_count} reaches {max_rejected}"
+        )
+
+    blocked_categories = _blocked_categories(state)
+    latest_report = _latest_report(candidate_dir / "evaluations")
+    latest_video = _latest_video(candidate_dir / "evaluations")
+    latest_comparison = _latest_comparison_video(candidate_dir / "evaluations")
+    packet_file = candidate_dir / "packets" / f"iteration_{next_iteration:03d}_packet.json"
+    prompt_file = candidate_dir / "packets" / f"iteration_{next_iteration:03d}_codex_request.md"
+    candidate = load_json(candidate_manifest_file)
+    state["budgets"] = {
+        "max_iterations": max_iterations,
+        "max_rejected": max_rejected,
+        "rejected_so_far": rejected_count,
+    }
+    packet = {
+        "artifact_type": "candidate_iteration_packet",
+        "artifact_version": 1,
+        "effect_id": candidate["effect_id"],
+        "iteration": next_iteration,
+        "candidate_manifest": str(candidate_manifest_file),
+        "analysis_file": str(analysis_file),
+        "design_file": str(design_file),
+        "candidate_files": candidate["candidate_files"],
+        "latest_report": str(latest_report) if latest_report else None,
+        "latest_candidate_video": str(latest_video) if latest_video else None,
+        "latest_comparison_video": str(latest_comparison) if latest_comparison else None,
+        "baseline": state["baseline"],
+        "history": state["history"],
+        "allowed_hypothesis_categories": [
+            category for category in HYPOTHESIS_CATEGORIES if category not in blocked_categories
+        ],
+        "blocked_hypothesis_categories": blocked_categories,
+        "budgets": state["budgets"],
+    }
+    packet["packet_file"] = str(packet_file)
+    write_json(packet_file, packet)
+    prompt_file.write_text(_refinement_request(packet, candidate_dir), encoding="utf-8")
+    state["last_packet"] = str(packet_file)
+    _write_state(candidate_manifest_file, state)
+    return {
+        "status": "succeeded",
+        "controller_status": "ready",
+        "iteration": next_iteration,
+        "packet_file": str(packet_file),
+        "prompt_file": str(prompt_file),
+        "blocked_hypothesis_categories": blocked_categories,
+    }
+
+
+def record_candidate_evaluation(
+    candidate_manifest_file: Path,
+    iteration: int,
+    report_file: Path,
+) -> dict[str, Any]:
+    state = _load_or_create_state(candidate_manifest_file)
+    iteration_file = _find_iteration_file(candidate_manifest_file.parent, iteration)
+    record = load_json(iteration_file)
+    category = record.get("hypothesis_category")
+    if category not in HYPOTHESIS_CATEGORIES:
+        raise ValueError(
+            f"iteration {iteration} must declare hypothesis_category from: {', '.join(HYPOTHESIS_CATEGORIES)}"
+        )
+    metrics = _metrics_from_report(load_json(report_file))
+    outcome, reason = _select_outcome(state.get("baseline"), metrics)
+    record["evaluation"] = metrics
+    record["status"] = outcome
+    record["reason"] = reason
+    write_json(iteration_file, record)
+    _upsert_history(state, iteration, category, outcome, metrics, str(report_file))
+    if outcome == "accepted":
+        snapshot_dir = _snapshot_baseline_sources(
+            candidate_manifest_file,
+            iteration,
+            candidate_manifest_file.parent,
+        )
+        state["baseline"] = {
+            "iteration": iteration,
+            "report_file": str(report_file),
+            "metrics": metrics,
+            "source_snapshot": str(snapshot_dir),
+            "selected_at": _timestamp(),
+        }
+    _write_state(candidate_manifest_file, state)
+    return {"status": outcome, "reason": reason, "state_file": str(_state_file(candidate_manifest_file))}
+
+
+def candidate_status(candidate_manifest_file: Path) -> dict[str, Any]:
+    state = _load_or_create_state(candidate_manifest_file)
+    return {
+        "status": "succeeded",
+        "effect_id": state["effect_id"],
+        "state_file": str(_state_file(candidate_manifest_file)),
+        "baseline": state["baseline"],
+        "history": state["history"],
+        "budgets": state.get("budgets"),
+        "blocked_hypothesis_categories": _blocked_categories(state),
+        "last_packet": state.get("last_packet"),
+    }
+
+
+def _load_or_create_state(candidate_manifest_file: Path) -> dict[str, Any]:
+    state_file = _state_file(candidate_manifest_file)
+    if state_file.exists():
+        state = load_json(state_file)
+    else:
+        candidate = load_json(candidate_manifest_file)
+        state = {
+            "artifact_type": "candidate_refinement_state",
+            "artifact_version": 1,
+            "effect_id": candidate["effect_id"],
+            "baseline": None,
+            "history": [],
+            "last_packet": None,
+        }
+    if _import_legacy_history(candidate_manifest_file.parent, state):
+        _write_state(candidate_manifest_file, state)
+    return state
+
+
+def _write_state(candidate_manifest_file: Path, state: dict[str, Any]) -> None:
+    write_json(_state_file(candidate_manifest_file), state)
+
+
+def _snapshot_baseline_sources(
+    candidate_manifest_file: Path,
+    iteration: int,
+    source_dir: Path,
+) -> Path:
+    candidate = load_json(candidate_manifest_file)
+    candidate_files = [Path(path) for path in candidate.get("candidate_files", [])]
+    if not candidate_files:
+        raise ValueError("candidate manifest has no candidate files")
+    snapshot_dir = candidate_manifest_file.parent / "baselines" / f"iteration_{iteration:03d}"
+    snapshot_dir.mkdir(parents=True, exist_ok=True)
+    for candidate_file in candidate_files:
+        source = source_dir / candidate_file.name
+        if not source.exists():
+            raise FileNotFoundError(f"baseline source is missing {source.name}")
+        shutil.copyfile(source, snapshot_dir / candidate_file.name)
+    return snapshot_dir
+
+
+def _state_file(candidate_manifest_file: Path) -> Path:
+    return candidate_manifest_file.parent / STATE_FILE_NAME
+
+
+def _iteration_records(candidate_dir: Path) -> list[tuple[int, Path]]:
+    records: list[tuple[int, Path]] = []
+    for path in candidate_dir.glob("iteration_*.json"):
+        match = ITERATION_PATTERN.match(path.name)
+        if match:
+            records.append((int(match.group(1)), path))
+    return sorted(records)
+
+
+def _find_iteration_file(candidate_dir: Path, iteration: int) -> Path:
+    matches = [path for number, path in _iteration_records(candidate_dir) if number == iteration]
+    if len(matches) != 1:
+        raise ValueError(f"expected exactly one iteration record for iteration {iteration}")
+    return matches[0]
+
+
+def _metrics_from_report(report: dict[str, Any]) -> dict[str, Any]:
+    score = report.get("score", report)
+    window = score.get("transition_window")
+    if not isinstance(window, dict):
+        raise ValueError("evaluation report is missing transition_window metrics")
+    endpoints = score.get("endpoint_checks")
+    if not isinstance(endpoints, dict):
+        raise ValueError("evaluation report is missing endpoint checks")
+    return {
+        "mse": _number(window, "mse"),
+        "mae": _number(window, "mae"),
+        "psnr_db": _number(window, "psnr_db"),
+        "ssim": _number(window, "ssim"),
+        "transition_window": {
+            "frame_start": window.get("frame_start"),
+            "frame_end": window.get("frame_end"),
+            "frame_count": window.get("frame_count"),
+        },
+        "endpoint_checks": endpoints,
+    }
+
+
+def _number(payload: dict[str, Any], key: str) -> float:
+    value = payload.get(key)
+    if not isinstance(value, (int, float)):
+        raise ValueError(f"evaluation report has invalid {key}")
+    return float(value)
+
+
+def _endpoints_are_exact(metrics: dict[str, Any]) -> bool:
+    endpoints = metrics["endpoint_checks"]
+    for key in ("before_transition", "after_transition"):
+        endpoint = endpoints.get(key)
+        if not isinstance(endpoint, dict):
+            return False
+        if endpoint.get("mse") != 0.0 or endpoint.get("ssim") != 1.0:
+            return False
+    return True
+
+
+def _select_outcome(baseline: dict[str, Any] | None, metrics: dict[str, Any]) -> tuple[str, str]:
+    if not _endpoints_are_exact(metrics):
+        return "rejected", "endpoint checks are no longer exact"
+    if baseline is None:
+        return "accepted", "first valid evaluation becomes the baseline"
+    previous = baseline["metrics"]
+    mse_improved = metrics["mse"] <= previous["mse"]
+    ssim_improved = metrics["ssim"] >= previous["ssim"]
+    strictly_improved = metrics["mse"] < previous["mse"] or metrics["ssim"] > previous["ssim"]
+    if mse_improved and ssim_improved and strictly_improved:
+        return "accepted", "improved or preserved MSE and SSIM while preserving endpoints"
+    if metrics["mse"] < previous["mse"] or metrics["ssim"] > previous["ssim"]:
+        return "tradeoff", "one primary metric improved while the other regressed"
+    return "rejected", "MSE and SSIM did not improve against the accepted baseline"
+
+
+def _upsert_history(
+    state: dict[str, Any],
+    iteration: int,
+    category: str,
+    status: str,
+    metrics: dict[str, Any],
+    report_file: str,
+) -> None:
+    item = {
+        "iteration": iteration,
+        "hypothesis_category": category,
+        "status": status,
+        "metrics": metrics,
+        "report_file": report_file,
+        "recorded_at": _timestamp(),
+    }
+    state["history"] = [entry for entry in state["history"] if entry.get("iteration") != iteration]
+    state["history"].append(item)
+    state["history"].sort(key=lambda entry: int(entry["iteration"]))
+
+
+def _import_legacy_history(candidate_dir: Path, state: dict[str, Any]) -> bool:
+    known = {item.get("iteration") for item in state["history"]}
+    changed = False
+    for iteration, path in _iteration_records(candidate_dir):
+        if iteration in known:
+            continue
+        record = load_json(path)
+        outcome = _legacy_outcome(record)
+        if outcome is None:
+            continue
+        category = _legacy_category(record, path.name)
+        _upsert_history(
+            state,
+            iteration,
+            category,
+            outcome,
+            record.get("evaluation", {}),
+            "",
+        )
+        changed = True
+    return changed
+
+
+def _legacy_outcome(record: dict[str, Any]) -> str | None:
+    status = record.get("status")
+    if status in {"accepted", "rejected", "tradeoff"}:
+        return status
+    evaluation = record.get("evaluation")
+    if isinstance(evaluation, dict) and evaluation.get("status") in {"accepted", "rejected", "tradeoff"}:
+        return evaluation["status"]
+    return None
+
+
+def _legacy_category(record: dict[str, Any], filename: str) -> str:
+    category = record.get("hypothesis_category")
+    if category in HYPOTHESIS_CATEGORIES:
+        return category
+    normalized = filename.lower()
+    if "blur" in normalized:
+        return "blur"
+    if "boundary" in normalized or "region" in normalized:
+        return "regions"
+    if "displacement" in normalized:
+        return "displacement"
+    if "mix" in normalized or "timing" in normalized:
+        return "timing"
+    return "other"
+
+
+def _blocked_categories(state: dict[str, Any]) -> list[str]:
+    blocked: list[str] = []
+    for category in HYPOTHESIS_CATEGORIES:
+        rejected = sum(
+            1
+            for item in state["history"]
+            if item.get("hypothesis_category") == category and item.get("status") == "rejected"
+        )
+        if rejected >= 3:
+            blocked.append(category)
+    return blocked
+
+
+def _latest_report(evaluations_dir: Path) -> Path | None:
+    reports = list(evaluations_dir.glob("*/reports/candidate_iteration_report.json"))
+    return max(reports, key=lambda path: path.stat().st_mtime) if reports else None
+
+
+def _latest_video(evaluations_dir: Path) -> Path | None:
+    videos = list(evaluations_dir.glob("*/artifacts/rendered_transition.mp4"))
+    return max(videos, key=lambda path: path.stat().st_mtime) if videos else None
+
+
+def _latest_comparison_video(evaluations_dir: Path) -> Path | None:
+    videos = list(evaluations_dir.glob("*/artifacts/comparison_transition_window.mp4"))
+    return max(videos, key=lambda path: path.stat().st_mtime) if videos else None
+
+
+def _refinement_request(packet: dict[str, Any], candidate_dir: Path) -> str:
+    allowed = ", ".join(packet["allowed_hypothesis_categories"])
+    return f"""Read:
+- agent/prompts/codex_effect_refinement_prompt.md
+- {packet['analysis_file']}
+- {packet['design_file']}
+- {packet['packet_file'] if 'packet_file' in packet else 'the iteration packet JSON'}
+- {packet['latest_report'] or 'no previous evaluation report'}
+- {packet['latest_candidate_video'] or 'no previous candidate video'}
+- {packet['latest_comparison_video'] or 'no previous comparison video'}
+
+Edit only:
+{candidate_dir}
+
+Refine {packet['effect_id']} for iteration {packet['iteration']}.
+
+Choose exactly one hypothesis category from: {allowed}.
+Do not repeat a rejected category unless you provide new visual evidence.
+Preserve the FX ID, class names, endpoint behavior, and candidate workspace boundary.
+Create or update exactly one iteration_{packet['iteration']:03d}_*.json record with
+`hypothesis_category`, `visual_hypothesis`, `changed_files`, and expected outcome.
+Do not run evaluation; the controller will run it after the edit.
+"""
+
+
+def _timestamp() -> str:
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")

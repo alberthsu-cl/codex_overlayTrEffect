@@ -24,6 +24,7 @@ from .codegen import (
 from .candidate_controller import (
     build_next_iteration_packet,
     candidate_status,
+    restore_candidate_baseline,
     set_candidate_baseline,
 )
 
@@ -179,7 +180,10 @@ def main(argv: list[str] | None = None) -> int:
                 candidate_manifest_file=Path(args.manifest).resolve(),
                 iteration=args.iteration,
                 report_file=Path(args.report).resolve(),
+                source_dir=Path(args.source_dir).resolve() if args.source_dir else None,
             )
+        elif args.command == "candidate-restore-baseline":
+            result = restore_candidate_baseline(Path(args.manifest).resolve())
         elif args.command == "candidate-next":
             result = build_next_iteration_packet(
                 candidate_manifest_file=Path(args.manifest).resolve(),
@@ -369,6 +373,16 @@ def build_parser() -> argparse.ArgumentParser:
     candidate_baseline.add_argument("--manifest", required=True)
     candidate_baseline.add_argument("--iteration", required=True, type=int)
     candidate_baseline.add_argument("--report", required=True)
+    candidate_baseline.add_argument(
+        "--source-dir",
+        help="source directory to snapshot as the selected baseline; defaults to the candidate workspace",
+    )
+
+    candidate_restore = subparsers.add_parser(
+        "candidate-restore-baseline",
+        help="restore candidate and registered sources from the selected baseline snapshot",
+    )
+    candidate_restore.add_argument("--manifest", required=True)
 
     candidate_next = subparsers.add_parser(
         "candidate-next",
