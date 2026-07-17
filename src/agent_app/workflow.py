@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import math
 import os
 from pathlib import Path
 import shutil
@@ -338,6 +339,9 @@ def score_candidate(
     frame_count: int | None,
     require_exact_frame_count: bool,
     ffmpeg_path: str | None = None,
+    frame_start: int | None = None,
+    frame_end: int | None = None,
+    endpoint_frame_count: int = 3,
 ) -> dict[str, Any]:
     modules = load_harness_modules(workspace_root)
     score = modules["score_frame_sequences"](
@@ -351,9 +355,68 @@ def score_candidate(
     ).to_dict()
     score["candidate"] = str(candidate)
     score["reference"] = str(reference)
+    if frame_start is not None or frame_end is not None:
+        score.update(
+            _build_windowed_score(
+                score,
+                frame_start=frame_start,
+                frame_end=frame_end,
+                endpoint_frame_count=endpoint_frame_count,
+            )
+        )
     score["status"] = "succeeded"
     write_json(output_file, score)
     return score
+
+
+def _build_windowed_score(
+    score: dict[str, Any],
+    frame_start: int | None,
+    frame_end: int | None,
+    endpoint_frame_count: int,
+) -> dict[str, Any]:
+    frames = score.get("frames")
+    if not isinstance(frames, list) or not frames:
+        raise ValueError("windowed scoring requires per-frame metrics")
+    if endpoint_frame_count < 1:
+        raise ValueError("endpoint_frame_count must be at least 1")
+
+    last_index = len(frames) - 1
+    start = 0 if frame_start is None else frame_start
+    end = last_index if frame_end is None else frame_end
+    if start < 0 or end < 0 or start > end or end > last_index:
+        raise ValueError(f"score window must be within frame indexes 0 through {last_index}")
+
+    window_frames = frames[start : end + 1]
+    before_frames = frames[max(0, start - endpoint_frame_count) : start]
+    after_frames = frames[end + 1 : end + 1 + endpoint_frame_count]
+    return {
+        "transition_window": {
+            "frame_start": start,
+            "frame_end": end,
+            **_aggregate_frame_scores(window_frames),
+        },
+        "endpoint_checks": {
+            "requested_frame_count": endpoint_frame_count,
+            "before_transition": _aggregate_frame_scores(before_frames) if before_frames else None,
+            "after_transition": _aggregate_frame_scores(after_frames) if after_frames else None,
+        },
+    }
+
+
+def _aggregate_frame_scores(frames: list[dict[str, Any]]) -> dict[str, Any]:
+    if not frames:
+        raise ValueError("cannot aggregate an empty frame score list")
+    mse = sum(float(frame["mse"]) for frame in frames) / len(frames)
+    mae = sum(float(frame["mae"]) for frame in frames) / len(frames)
+    ssim_values = [float(frame["ssim"]) for frame in frames if frame.get("ssim") is not None]
+    return {
+        "frame_count": len(frames),
+        "mse": mse,
+        "mae": mae,
+        "psnr_db": 10 * math.log10((255.0 * 255.0) / mse) if mse > 0 else None,
+        "ssim": sum(ssim_values) / len(ssim_values) if ssim_values else None,
+    }
 
 
 def build_report(
@@ -392,6 +455,9 @@ def evaluate_candidate(
     frame_count: int | None,
     ffmpeg_path: str | None,
     restore: bool = False,
+    frame_start: int | None = None,
+    frame_end: int | None = None,
+    endpoint_frame_count: int = 3,
 ) -> dict[str, Any]:
     """Stage, build, render, and score a candidate, optionally restoring it afterward."""
     candidate = load_json(candidate_manifest_file)
@@ -460,6 +526,9 @@ def evaluate_candidate(
             frame_count=frame_count,
             require_exact_frame_count=False,
             ffmpeg_path=ffmpeg_path,
+            frame_start=frame_start,
+            frame_end=frame_end,
+            endpoint_frame_count=endpoint_frame_count,
         )
         report_file = run_root / "reports" / "candidate_iteration_report.json"
         report = build_report(

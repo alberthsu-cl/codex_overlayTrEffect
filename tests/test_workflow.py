@@ -213,7 +213,18 @@ class WorkflowTests(unittest.TestCase):
         fake_score = type(
             "FakeScore",
             (),
-            {"to_dict": lambda self: {"frame_count": 1, "mse": 0.0}},
+            {
+                "to_dict": lambda self: {
+                    "frame_count": 4,
+                    "mse": 3.0,
+                    "frames": [
+                        {"mse": 0.0, "mae": 0.0, "ssim": 1.0},
+                        {"mse": 2.0, "mae": 1.0, "ssim": 0.8},
+                        {"mse": 4.0, "mae": 2.0, "ssim": 0.6},
+                        {"mse": 6.0, "mae": 3.0, "ssim": 0.4},
+                    ],
+                }
+            },
         )()
         fake_modules = {
             "score_frame_sequences": lambda **_: fake_score,
@@ -228,13 +239,20 @@ class WorkflowTests(unittest.TestCase):
                     output_file=Path("score.json"),
                     width=2,
                     height=2,
-                    frame_count=1,
+                    frame_count=4,
                     require_exact_frame_count=True,
+                    frame_start=1,
+                    frame_end=2,
+                    endpoint_frame_count=1,
                 )
 
         self.assertEqual(result["status"], "succeeded")
-        self.assertEqual(result["frame_count"], 1)
-        self.assertEqual(result["mse"], 0.0)
+        self.assertEqual(result["frame_count"], 4)
+        self.assertEqual(result["mse"], 3.0)
+        self.assertEqual(result["transition_window"]["mse"], 3.0)
+        self.assertEqual(result["transition_window"]["frame_count"], 2)
+        self.assertEqual(result["endpoint_checks"]["before_transition"]["mse"], 0.0)
+        self.assertEqual(result["endpoint_checks"]["after_transition"]["mse"], 6.0)
         write_json.assert_called_once()
 
     def test_build_report_preserves_all_artifacts(self) -> None:

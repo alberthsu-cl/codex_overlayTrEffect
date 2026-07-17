@@ -132,7 +132,8 @@ py -3 agent/src/main.py score `
   --candidate agent/work/<run>/artifacts `
   --reference agent/work/reference_transition `
   --output agent/work/<run>/reports/score.json `
-  --width 1920 --height 1080
+  --width 1920 --height 1080 `
+  --frame-start 24 --frame-end 42
 
 py -3 agent/src/main.py report `
   --analysis agent/artifacts/transition_analysis.json `
@@ -141,6 +142,13 @@ py -3 agent/src/main.py report `
   --score-report agent/work/<run>/reports/score.json `
   --output agent/work/<run>/reports/regression_report.json
 ```
+
+When a reference sequence includes stable pre/post-transition frames, use
+`--frame-start` and `--frame-end` (inclusive) to add a `transition_window`
+metric block. The full-sequence metrics remain for compatibility, while the
+window metrics drive shader regression. `endpoint_checks` reports the three
+frames immediately before and after the selected window; adjust with
+`--endpoint-frame-count`.
 
 When `--frame-count` is omitted, `build-job` reads
 `reference_transition_manifest.json` and uses its normalized frame count. It

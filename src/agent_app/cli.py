@@ -93,6 +93,9 @@ def main(argv: list[str] | None = None) -> int:
                 frame_count=args.frame_count,
                 require_exact_frame_count=args.require_exact_frame_count,
                 ffmpeg_path=args.ffmpeg,
+                frame_start=args.frame_start,
+                frame_end=args.frame_end,
+                endpoint_frame_count=args.endpoint_frame_count,
             )
         elif args.command == "build-job":
             result = build_job_from_artifacts(
@@ -160,6 +163,9 @@ def main(argv: list[str] | None = None) -> int:
                 frame_count=args.frame_count,
                 ffmpeg_path=args.ffmpeg,
                 restore=args.restore,
+                frame_start=args.frame_start,
+                frame_end=args.frame_end,
+                endpoint_frame_count=args.endpoint_frame_count,
             )
         else:
             result = build_report(
@@ -246,6 +252,9 @@ def build_parser() -> argparse.ArgumentParser:
     score.add_argument("--frame-count", type=int)
     score.add_argument("--require-exact-frame-count", action="store_true")
     score.add_argument("--ffmpeg")
+    score.add_argument("--frame-start", type=int)
+    score.add_argument("--frame-end", type=int)
+    score.add_argument("--endpoint-frame-count", type=int, default=3)
 
     build_job = subparsers.add_parser(
         "build-job",
@@ -315,6 +324,9 @@ def build_parser() -> argparse.ArgumentParser:
     candidate_evaluate.add_argument("--height", type=int, required=True)
     candidate_evaluate.add_argument("--frame-count", type=int)
     candidate_evaluate.add_argument("--ffmpeg")
+    candidate_evaluate.add_argument("--frame-start", type=int)
+    candidate_evaluate.add_argument("--frame-end", type=int)
+    candidate_evaluate.add_argument("--endpoint-frame-count", type=int, default=3)
     candidate_evaluate.add_argument(
         "--restore",
         action="store_true",
