@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -426,9 +427,11 @@ def evaluate_candidate(
                 str(target_dir / "OverlayTrPlugInFx.vcxproj"),
                 f"/p:Configuration={configuration}",
                 f"/p:Platform={platform}",
+                "/t:Rebuild",
                 "/m",
             ],
             cwd=workspace_root,
+            env=_normalized_windows_environment(),
             capture_output=True,
             text=True,
             check=False,
@@ -524,6 +527,19 @@ def _reference_frame_count(reference_transition: str | None) -> int | None:
     manifest = load_json(manifest_path)
     frame_count = manifest.get("frame_count")
     return frame_count if isinstance(frame_count, int) and frame_count >= 2 else None
+
+
+def _normalized_windows_environment() -> dict[str, str]:
+    """Avoid ProcessStartInfo failures from duplicate case-insensitive env keys."""
+    normalized: dict[str, str] = {}
+    seen: set[str] = set()
+    for key, value in os.environ.items():
+        folded = key.casefold()
+        if folded in seen:
+            continue
+        seen.add(folded)
+        normalized[key] = value
+    return normalized
 
 
 def _extract_single_frame(

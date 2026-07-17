@@ -35,7 +35,7 @@
   <text class="legend" x="1605" y="59" text-anchor="middle">Artifact / source</text>
 
   <rect class="band" x="30" y="115" width="1740" height="235" rx="16"/>
-  <text class="band-title" x="55" y="150">Pass 1: understand the sample</text>
+  <text class="band-title" x="55" y="150"> Understand the sample</text>
 
   <rect class="command" x="55" y="185" width="250" height="105"/>
   <text class="text" x="180" y="225" text-anchor="middle">Prepare video</text>
@@ -47,7 +47,7 @@
 
   <rect class="artifact" x="655" y="185" width="250" height="105"/>
   <text class="text" x="780" y="225" text-anchor="middle">transition_</text>
-  <text class="text" x="780" y="253" text-anchor="middle">structure.json</text>
+  <text class="text" x="780" y="253" text-anchor="middle">analysis.json</text>
 
   <rect class="command" x="955" y="185" width="250" height="105"/>
   <text class="text" x="1080" y="225" text-anchor="middle">Prepare source</text>

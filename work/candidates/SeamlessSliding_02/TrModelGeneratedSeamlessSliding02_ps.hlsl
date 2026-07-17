@@ -13,6 +13,7 @@ cbuffer PSParam : register(b0)
     float2 f2AspectRatio; //(AspectX, AspectY)
     float2 f2DirectionUpper; //(DirectionX, DirectionY) for the upper region
     float2 f2DirectionLower; //(DirectionX, DirectionY) for the lower region
+    float2 f2Padding;
     float4 f4DistanceTable[30];
 };
 //--------------------------------------------------------------------------------------
@@ -38,7 +39,8 @@ float4 Pixel_Shader(PS_INPUT input) : SV_TARGET
     float4 f4Result0 = float4(0.0, 0.0, 0.0, 0.0);
     float4 f4Result1 = float4(0.0, 0.0, 0.0, 0.0);
     float4 f4Result = float4(0.0, 0.0, 0.0, 0.0);
-    float2 f2Direction = input.Tex.y < 0.5 ? f2DirectionUpper : f2DirectionLower;
+    float bandIndex = floor(input.Tex.y * 8.0);
+    float2 f2Direction = fmod(bandIndex, 2.0) == 0.0 ? f2DirectionUpper : f2DirectionLower;
 
     if ((!bSpeedUp) || (bSpeedUp && nTxIndex == 0))
     {
