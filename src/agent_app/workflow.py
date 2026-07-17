@@ -237,6 +237,7 @@ def benchmark_effects(
             job_file=job_file,
             output_root=output_root / "runs",
             renderer=renderer,
+            ffmpeg_path=ffmpeg_path,
         )
         candidate_result: dict[str, Any] = {
             "effect_id": candidate.get("effect_id"),
@@ -285,6 +286,7 @@ def render_job(
     job_file: Path,
     output_root: Path,
     renderer: str | None,
+    ffmpeg_path: str | None = None,
 ) -> dict[str, Any]:
     modules = load_harness_modules(workspace_root)
     job = modules["load_render_job"](job_file)
@@ -309,6 +311,15 @@ def render_job(
         job=job,
         renderer_executable=renderer,
     )
+    video = (
+        _encode_artifact_video(
+            artifacts_dir=invocation.expected_output_dir,
+            fps=job.render.fps,
+            ffmpeg_path=ffmpeg_path,
+        )
+        if invocation.status == "succeeded"
+        else {"status": "skipped", "message": "render did not succeed"}
+    )
     result = {
         "status": invocation.status,
         "message": invocation.message,
@@ -324,9 +335,72 @@ def render_job(
         "stdout": invocation.stdout,
         "stderr": invocation.stderr,
         "renderer_result": invocation.renderer_result,
+        "video": video,
     }
     write_json(run_root / "render_report.json", result)
     return result
+
+
+def _encode_artifact_video(
+    artifacts_dir: Path,
+    fps: int,
+    ffmpeg_path: str | None,
+) -> dict[str, Any]:
+    """Encode a successful PNG sequence for quick visual review."""
+    frame_pattern = "frame_%04d.png"
+    first_frame = artifacts_dir / "frame_0000.png"
+    if not first_frame.exists():
+        return {
+            "status": "skipped",
+            "message": f"expected first rendered frame was not found: {first_frame}",
+        }
+
+    ffmpeg_executable = ffmpeg_path or shutil.which("ffmpeg")
+    if not ffmpeg_executable:
+        return {
+            "status": "skipped",
+            "message": "ffmpeg was not found; PNG artifacts remain available",
+        }
+
+    output_file = artifacts_dir / "rendered_transition.mp4"
+    completed = subprocess.run(
+        [
+            ffmpeg_executable,
+            "-y",
+            "-framerate",
+            str(fps),
+            "-start_number",
+            "0",
+            "-i",
+            frame_pattern,
+            "-c:v",
+            "libx264",
+            "-preset",
+            "medium",
+            "-crf",
+            "18",
+            "-pix_fmt",
+            "yuv420p",
+            output_file.name,
+        ],
+        cwd=artifacts_dir,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        return {
+            "status": "failed",
+            "message": "ffmpeg could not encode the rendered PNG sequence",
+            "exit_code": completed.returncode,
+            "stderr": completed.stderr,
+        }
+    return {
+        "status": "succeeded",
+        "file": str(output_file),
+        "fps": fps,
+        "exit_code": completed.returncode,
+    }
 
 
 def score_candidate(
@@ -515,6 +589,7 @@ def evaluate_candidate(
             job_file=job_file,
             output_root=output_root,
             renderer=renderer,
+            ffmpeg_path=ffmpeg_path,
         )
         if render_result.get("status") != "succeeded":
             raise RuntimeError(f"candidate render failed: {render_result.get('message')}")

@@ -10,11 +10,34 @@ AGENT_SRC = Path(__file__).resolve().parents[1] / "src"
 if str(AGENT_SRC) not in sys.path:
     sys.path.insert(0, str(AGENT_SRC))
 
-from agent_app.workflow import build_report, prepare_sources, retrieve_effect, score_candidate
+from agent_app.workflow import (
+    _encode_artifact_video,
+    build_report,
+    prepare_sources,
+    retrieve_effect,
+    score_candidate,
+)
 from agent_app.artifacts import build_render_job
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_encode_artifact_video_uses_png_sequence_and_job_fps(self) -> None:
+        with self.subTest("successful encode"):
+            artifacts_dir = Path(__file__).parent / "fixtures" / "render_artifacts"
+            completed = type("Completed", (), {"returncode": 0, "stderr": ""})()
+            with patch("agent_app.workflow.subprocess.run", return_value=completed) as run:
+                result = _encode_artifact_video(
+                    artifacts_dir=artifacts_dir,
+                    fps=30,
+                    ffmpeg_path="C:/tools/ffmpeg.exe",
+                )
+
+                self.assertEqual(result["status"], "succeeded")
+                self.assertEqual(result["fps"], 30)
+                self.assertEqual(run.call_args.args[0][0], "C:/tools/ffmpeg.exe")
+                self.assertIn("frame_%04d.png", run.call_args.args[0])
+                self.assertIn("rendered_transition.mp4", run.call_args.args[0])
+
     def test_retrieve_effect_returns_catalog_match(self) -> None:
         analysis = {
             "planner_hints": {

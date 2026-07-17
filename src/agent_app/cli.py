@@ -81,6 +81,7 @@ def main(argv: list[str] | None = None) -> int:
                 job_file=Path(args.job).resolve(),
                 output_root=Path(args.output_root).resolve(),
                 renderer=renderer,
+                ffmpeg_path=args.ffmpeg,
             )
         elif args.command == "score":
             result = score_candidate(
@@ -242,6 +243,7 @@ def build_parser() -> argparse.ArgumentParser:
     render.add_argument("--job", required=True)
     render.add_argument("--output-root", required=True)
     render.add_argument("--renderer")
+    render.add_argument("--ffmpeg")
 
     score = subparsers.add_parser("score", help="score candidate frames against reference frames")
     score.add_argument("--candidate", required=True)

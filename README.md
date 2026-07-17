@@ -268,6 +268,11 @@ The evaluation command requires `msbuild`, the native renderer, and a job whose
 under `--backup-dir`; use `candidate-promote` only when you want to promote a
 reviewed candidate independently of evaluation.
 
+Each successful render also encodes its PNG sequence as
+`artifacts/rendered_transition.mp4` at the render job's FPS. The MP4 is for
+quick visual review; scoring continues to use the original PNG frames. The
+command finds `ffmpeg` on `PATH`, or accepts an explicit `--ffmpeg` path.
+
 After registration, build the plugin, stage the DLL through the existing
 deployment flow, render with the headless renderer, and score the candidate
 before treating the effect as validated.
