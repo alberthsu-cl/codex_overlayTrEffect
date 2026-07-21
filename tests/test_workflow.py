@@ -403,23 +403,32 @@ class WorkflowTests(unittest.TestCase):
                 "direction_agreement": 0.8,
                 "pairs": [{"vector_mae": 2.0}],
             },
+            "create_motion_visualizations": lambda **_: {
+                "status": "succeeded",
+                "frame_count": 1,
+                "output_dir": "candidate/motion_diagnostics",
+            },
         }
 
         with patch("agent_app.workflow.load_harness_modules", return_value=fake_modules):
             with patch("agent_app.workflow.write_json") as write_json:
-                result = score_candidate(
-                    workspace_root=Path("D:/AI_Harness"),
-                    candidate=Path("candidate"),
-                    reference=Path("reference"),
-                    output_file=Path("score.json"),
-                    width=2,
-                    height=2,
-                    frame_count=4,
-                    require_exact_frame_count=True,
-                    frame_start=1,
-                    frame_end=2,
-                    endpoint_frame_count=1,
-                )
+                with patch(
+                    "agent_app.workflow._encode_png_sequence",
+                    return_value={"status": "succeeded", "file": "candidate/motion_diagnostics.mp4"},
+                ):
+                    result = score_candidate(
+                        workspace_root=Path("D:/AI_Harness"),
+                        candidate=Path("candidate"),
+                        reference=Path("reference"),
+                        output_file=Path("score.json"),
+                        width=2,
+                        height=2,
+                        frame_count=4,
+                        require_exact_frame_count=True,
+                        frame_start=1,
+                        frame_end=2,
+                        endpoint_frame_count=1,
+                    )
 
         self.assertEqual(result["status"], "succeeded")
         self.assertEqual(result["frame_count"], 4)
@@ -431,6 +440,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(result["transition_diagnostics"]["worst_mse_frames"][0]["frame_index"], 2)
         self.assertEqual(result["motion_metrics"]["motion_similarity"], 0.75)
         self.assertEqual(result["transition_diagnostics"]["worst_motion_pairs"][0]["vector_mae"], 2.0)
+        self.assertEqual(result["motion_visualizations"]["video"]["status"], "succeeded")
         write_json.assert_called_once()
 
     def test_build_report_preserves_all_artifacts(self) -> None:

@@ -348,7 +348,6 @@ def _encode_artifact_video(
     ffmpeg_path: str | None,
 ) -> dict[str, Any]:
     """Encode a successful PNG sequence for quick visual review."""
-    frame_pattern = "frame_%04d.png"
     first_frame = artifacts_dir / "frame_0000.png"
     if not first_frame.exists():
         return {
@@ -363,7 +362,16 @@ def _encode_artifact_video(
             "message": "ffmpeg was not found; PNG artifacts remain available",
         }
 
-    output_file = artifacts_dir / "rendered_transition.mp4"
+    return _encode_png_sequence(artifacts_dir, fps, ffmpeg_executable, artifacts_dir / "rendered_transition.mp4")
+
+
+def _encode_png_sequence(
+    frames_dir: Path,
+    fps: int,
+    ffmpeg_executable: str,
+    output_file: Path,
+) -> dict[str, Any]:
+    frame_pattern = "frame_%04d.png"
     completed = subprocess.run(
         [
             ffmpeg_executable,
@@ -384,7 +392,7 @@ def _encode_artifact_video(
             "yuv420p",
             output_file.name,
         ],
-        cwd=artifacts_dir,
+        cwd=frames_dir,
         capture_output=True,
         text=True,
         check=False,
@@ -541,6 +549,28 @@ def score_candidate(
                 key=lambda pair: float(pair.get("vector_mae", pair.get("mean_shift_error", 0.0))),
                 reverse=True,
             )[:5]
+            motion_visualizer = modules.get("create_motion_visualizations")
+            if motion_visualizer is not None:
+                visualizations = motion_visualizer(
+                    candidate=candidate,
+                    reference=reference,
+                    output_dir=candidate / "motion_diagnostics",
+                    width=width,
+                    height=height,
+                    frame_start=score["transition_window"]["frame_start"],
+                    frame_end=score["transition_window"]["frame_end"],
+                    ffmpeg_path=ffmpeg_path,
+                )
+                if visualizations.get("status") == "succeeded":
+                    ffmpeg_executable = ffmpeg_path or shutil.which("ffmpeg")
+                    if ffmpeg_executable:
+                        visualizations["video"] = _encode_png_sequence(
+                            candidate / "motion_diagnostics",
+                            fps=30,
+                            ffmpeg_executable=ffmpeg_executable,
+                            output_file=candidate / "motion_diagnostics.mp4",
+                        )
+                score["motion_visualizations"] = visualizations
     score["status"] = "succeeded"
     write_json(output_file, score)
     return score

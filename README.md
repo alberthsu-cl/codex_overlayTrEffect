@@ -289,6 +289,14 @@ records vector error, direction agreement, region overlap, and a combined
 `motion_similarity` score. The dependency-free horizontal-band scorer remains
 only as a fallback when OpenCV is unavailable. These metrics complement, but
 do not replace, visual review for dissolves, masks, noise, or severe occlusion.
+Forward/backward flow consistency yields `reliable_motion_coverage`, so the
+controller can distinguish reliable motion evidence from ambiguous regions.
+
+When OpenCV motion scoring succeeds, the candidate artifacts also contain
+`motion_diagnostics/frame_XXXX.png` and `motion_diagnostics.mp4`. Each panel
+shows reference flow, candidate flow, and a vector-error heatmap for one pair
+of transition frames. The controller includes the latest diagnostic video in
+the next Codex refinement packet.
 
 ### Stateful refinement loop
 

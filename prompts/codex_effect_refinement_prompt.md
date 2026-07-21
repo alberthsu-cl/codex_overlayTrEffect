@@ -17,6 +17,7 @@ Read:
 - the latest score report
 - `motion_metrics` and worst-motion-pair diagnostics when the score report includes them
 - the latest candidate review MP4 when available
+- the latest optical-flow diagnostic MP4 when available
 - all source files under the candidate workspace
 
 Rules:

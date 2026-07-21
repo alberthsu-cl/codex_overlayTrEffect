@@ -124,6 +124,7 @@ def build_next_iteration_packet(
     latest_report = _latest_report(candidate_dir / "evaluations")
     latest_video = _latest_video(candidate_dir / "evaluations")
     latest_comparison = _latest_comparison_video(candidate_dir / "evaluations")
+    latest_motion = _latest_motion_video(candidate_dir / "evaluations")
     packet_file = candidate_dir / "packets" / f"iteration_{next_iteration:03d}_packet.json"
     prompt_file = candidate_dir / "packets" / f"iteration_{next_iteration:03d}_codex_request.md"
     candidate = load_json(candidate_manifest_file)
@@ -144,6 +145,7 @@ def build_next_iteration_packet(
         "latest_report": str(latest_report) if latest_report else None,
         "latest_candidate_video": str(latest_video) if latest_video else None,
         "latest_comparison_video": str(latest_comparison) if latest_comparison else None,
+        "latest_motion_video": str(latest_motion) if latest_motion else None,
         "baseline": state["baseline"],
         "history": state["history"],
         "shortlist": state["shortlist"],
@@ -317,6 +319,8 @@ def _metrics_from_report(report: dict[str, Any]) -> dict[str, Any]:
             motion_metrics["flow_vector_mae"] = _number(motion, "flow_vector_mae")
         if isinstance(motion.get("motion_region_iou"), (int, float)):
             motion_metrics["motion_region_iou"] = _number(motion, "motion_region_iou")
+        if isinstance(motion.get("reliable_motion_coverage"), (int, float)):
+            motion_metrics["reliable_motion_coverage"] = _number(motion, "reliable_motion_coverage")
         if isinstance(motion.get("horizontal_shift_mae"), (int, float)):
             motion_metrics["horizontal_shift_mae"] = _number(motion, "horizontal_shift_mae")
         metrics["motion"] = motion_metrics
@@ -510,6 +514,11 @@ def _latest_comparison_video(evaluations_dir: Path) -> Path | None:
     return max(videos, key=lambda path: path.stat().st_mtime) if videos else None
 
 
+def _latest_motion_video(evaluations_dir: Path) -> Path | None:
+    videos = list(evaluations_dir.glob("*/artifacts/motion_diagnostics.mp4"))
+    return max(videos, key=lambda path: path.stat().st_mtime) if videos else None
+
+
 def _refinement_request(packet: dict[str, Any], candidate_dir: Path) -> str:
     allowed = ", ".join(packet["allowed_hypothesis_categories"])
     return f"""Read:
@@ -520,6 +529,7 @@ def _refinement_request(packet: dict[str, Any], candidate_dir: Path) -> str:
 - {packet['latest_report'] or 'no previous evaluation report'}
 - {packet['latest_candidate_video'] or 'no previous candidate video'}
 - {packet['latest_comparison_video'] or 'no previous comparison video'}
+- {packet['latest_motion_video'] or 'no previous motion diagnostic video'}
 
 Edit only:
 {candidate_dir}
