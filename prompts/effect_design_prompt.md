@@ -42,5 +42,21 @@ Important constraints:
 - if the transition likely exceeds the current single-pass effect model, say so clearly
 - keep the result compact and machine-readable
 
+New-effect delivery policy:
+- When the request says that this sample must produce a new shader deliverable,
+  do not choose `reuse_existing_effect` as the final strategy. Existing effects
+  may still be named as the closest visual reference or code base.
+- Use `tune_existing_effect` when the best implementation path is to clone and
+  adapt an existing pure-HLSL effect. In this project, that action means create
+  a new source variant; it does not mean changing the existing effect.
+- For `tune_existing_effect` and `implement_new_effect`, set
+  `target_effect.effect_id` to a new unique ID in the form
+  `ModelGenerated\\<Family>_XX`. Inspect the registered ModelGenerated IDs
+  before selecting the next index.
+- For `tune_existing_effect`, include `source_variant` with the base source
+  stem, source file names, and only exact, unambiguous initial replacements.
+- `reuse_existing_effect` is permitted only when the request explicitly says
+  that no new shader deliverable is required, such as a benchmark-only run.
+
 Use the supplied effect-design schema. The final response must satisfy that schema exactly.
 ```

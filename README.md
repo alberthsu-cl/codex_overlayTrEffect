@@ -142,10 +142,17 @@ conda run -n harness python agent/src/main.py sample-init `
 Use lowercase letters, digits, `_`, and `-` in the sample ID. For this example,
 all work stays under `agent/work/samples/example_20260721/`:
 
+`--target-frame-count` is a maximum. Preparation analyzes the full video,
+detects a high-change transition window, and samples up to that many frames
+from the window. Check `reference/reference_transition_manifest.json` and use
+its actual `frame_count` for the repeated A/B source sequences. When
+`build-job` omits `--frame-count`, it uses that manifest count automatically.
+
 ```powershell
 conda run -n harness python agent/src/main.py prepare `
   --source-video "D:\\input\\example.mp4" `
-  --output-dir agent/work/samples/example_20260721/reference
+  --output-dir agent/work/samples/example_20260721/reference `
+  --target-frame-count 60
 
 # After Codex has identified the stable A/B source boundaries.
 conda run -n harness python agent/src/main.py prepare-sources `
@@ -153,7 +160,7 @@ conda run -n harness python agent/src/main.py prepare-sources `
   --output-root agent/work/samples/example_20260721/sources `
   --start-frame <A-frame> `
   --end-frame <B-frame> `
-  --frame-count 60
+  --frame-count <reference-manifest-frame-count>
 ```
 
 Save Codex output as `analysis/transition_structure.json` and
