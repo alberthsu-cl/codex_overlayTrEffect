@@ -24,11 +24,13 @@ from .codegen import (
 from .candidate_controller import (
     build_next_iteration_packet,
     candidate_status,
+    human_accept_candidate,
     record_candidate_evaluation,
     restore_candidate_baseline,
     set_candidate_baseline,
     start_refinement_phase,
 )
+from .sample_workspace import initialize_sample_workspace
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -37,7 +39,15 @@ def main(argv: list[str] | None = None) -> int:
     workspace_root = Path(__file__).resolve().parents[3]
 
     try:
-        if args.command == "prepare":
+        if args.command == "sample-init":
+            result = initialize_sample_workspace(
+                samples_root=Path(args.output_root).resolve()
+                if args.output_root
+                else workspace_root / "agent" / "work" / "samples",
+                sample_id=args.sample_id,
+                source_video=Path(args.source_video).resolve(),
+            )
+        elif args.command == "prepare":
             result = prepare_reference(
                 workspace_root=workspace_root,
                 source_video=Path(args.source_video).resolve(),
@@ -186,6 +196,13 @@ def main(argv: list[str] | None = None) -> int:
             )
         elif args.command == "candidate-restore-baseline":
             result = restore_candidate_baseline(Path(args.manifest).resolve())
+        elif args.command == "candidate-human-accept":
+            result = human_accept_candidate(
+                candidate_manifest_file=Path(args.manifest).resolve(),
+                iteration=args.iteration,
+                reviewer=args.reviewer,
+                reason=args.reason,
+            )
         elif args.command == "candidate-start-phase":
             result = start_refinement_phase(
                 candidate_manifest_file=Path(args.manifest).resolve(),
@@ -235,6 +252,17 @@ def _default_renderer(workspace_root: Path) -> str | None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Codex-driven transition effect workflow")
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    sample_init = subparsers.add_parser(
+        "sample-init",
+        help="create an isolated work area for one sample transition video",
+    )
+    sample_init.add_argument("--sample-id", required=True)
+    sample_init.add_argument("--source-video", required=True)
+    sample_init.add_argument(
+        "--output-root",
+        help="parent folder for sample workspaces; defaults to agent/work/samples",
+    )
 
     prepare = subparsers.add_parser("prepare", help="prepare normalized reference transition frames")
     prepare.add_argument("--source-video", required=True)
@@ -401,6 +429,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="restore candidate and registered sources from the selected baseline snapshot",
     )
     candidate_restore.add_argument("--manifest", required=True)
+
+    candidate_human_accept = subparsers.add_parser(
+        "candidate-human-accept",
+        help="record human visual acceptance for the selected candidate baseline and close its phase",
+    )
+    candidate_human_accept.add_argument("--manifest", required=True)
+    candidate_human_accept.add_argument("--iteration", required=True, type=int)
+    candidate_human_accept.add_argument("--reviewer", required=True)
+    candidate_human_accept.add_argument("--reason", required=True)
 
     candidate_phase = subparsers.add_parser(
         "candidate-start-phase",

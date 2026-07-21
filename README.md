@@ -123,6 +123,47 @@ python agent/src/main.py benchmark `
   --ffmpeg C:/Users/albert_hsu.CLT/AppData/Local/miniconda3/envs/harness/Library/bin/ffmpeg.exe
 ```
 
+## Sample Workspaces
+
+Keep every input video in its own workspace under `agent/work/samples/`. This
+prevents reference frames, analysis JSON, generated effects, candidate sources,
+and evaluation artifacts for separate videos from being mixed together.
+
+Create a workspace before preparing the sample. This records the original video
+path without copying the video, then creates `reference/`, `sources/`,
+`analysis/`, `design/`, `jobs/`, `effects/`, `candidates/`, and `reports/`:
+
+```powershell
+conda run -n harness python agent/src/main.py sample-init `
+  --sample-id example_20260721 `
+  --source-video "D:\\input\\example.mp4"
+```
+
+Use lowercase letters, digits, `_`, and `-` in the sample ID. For this example,
+all work stays under `agent/work/samples/example_20260721/`:
+
+```powershell
+conda run -n harness python agent/src/main.py prepare `
+  --source-video "D:\\input\\example.mp4" `
+  --output-dir agent/work/samples/example_20260721/reference
+
+# After Codex has identified the stable A/B source boundaries.
+conda run -n harness python agent/src/main.py prepare-sources `
+  --source-video "D:\\input\\example.mp4" `
+  --output-root agent/work/samples/example_20260721/sources `
+  --start-frame <A-frame> `
+  --end-frame <B-frame> `
+  --frame-count 60
+```
+
+Save Codex output as `analysis/transition_structure.json` and
+`design/effect_design.json`. Place the render job in `jobs/render_job.json`,
+the generated package in `effects/<effect-name>/`, and its refinement workspace
+in `candidates/<effect-name>/`. FX IDs remain global in `OverlayTrEngine`, so
+assign each newly generated effect a unique ID such as
+`ModelGenerated\\SeamlessSliding_03` even when the sample workspaces are
+separate.
+
 The `render` command accepts the existing harness render-job JSON contract. A
 Codex-produced `effect_design.json` is kept alongside the job and is consumed
 by `build-job` and the later report step; it is not silently converted into a

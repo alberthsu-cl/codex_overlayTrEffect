@@ -147,7 +147,7 @@ HRESULT CTrModelGeneratedSeamlessSliding02::UpdatePSParam(void* pPSParam)
 		fRatio = fRatio * fRatio;
 		FLOAT fDistance = FLOAT(0.5) * fRatio;
 
-		pMyPSParam->nSampleCount = 20;
+		pMyPSParam->nSampleCount = MAX_SAMPLE_COUNT_PRODUCTION;
 		FLOAT fOffset = 0;
 		FLOAT fStepDistance = FLOAT(0.011);
 		FLOAT fStep = -fStepDistance * fRatio;
@@ -174,7 +174,7 @@ HRESULT CTrModelGeneratedSeamlessSliding02::UpdatePSParam(void* pPSParam)
 		fRatio = fRatio * fRatio;
 		FLOAT fDistance = FLOAT(-0.5) * fRatio;
 
-		pMyPSParam->nSampleCount = 20;
+		pMyPSParam->nSampleCount = MAX_SAMPLE_COUNT_PRODUCTION;
 		FLOAT fOffset = 0;
 		FLOAT fStepDistance = FLOAT(0.011);
 		FLOAT fStep = -fStepDistance * FLOAT(fRatio * 0.7 + 0.3);

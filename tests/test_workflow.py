@@ -23,14 +23,37 @@ from agent_app.workflow import (
 from agent_app.artifacts import build_render_job
 from agent_app.candidate_controller import (
     build_next_iteration_packet,
+    human_accept_candidate,
     record_candidate_evaluation,
     restore_candidate_baseline,
     set_candidate_baseline,
     start_refinement_phase,
 )
+from agent_app.sample_workspace import initialize_sample_workspace
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_sample_workspace_isolated_by_sample_id(self) -> None:
+        root = Path(__file__).resolve().parents[1] / "work" / f"sample_workspace_test_{uuid.uuid4().hex}"
+        source = root / "input.mp4"
+        try:
+            root.mkdir(parents=True)
+            source.write_bytes(b"video")
+            result = initialize_sample_workspace(root / "samples", "example_001", source)
+            sample_dir = Path(result["sample_directory"])
+            self.assertTrue((sample_dir / "sample_workspace.json").is_file())
+            self.assertTrue((sample_dir / "reference").is_dir())
+            self.assertTrue((sample_dir / "candidates").is_dir())
+            with self.assertRaises(ValueError):
+                initialize_sample_workspace(root / "samples", "example_001", source)
+        finally:
+            for path in sorted(root.rglob("*"), reverse=True):
+                if path.is_file():
+                    path.unlink()
+                elif path.is_dir():
+                    path.rmdir()
+            root.rmdir()
+
     def test_controller_tracks_baseline_and_evaluation_outcome(self) -> None:
         root = Path(__file__).resolve().parents[1] / "work" / f"controller_test_{uuid.uuid4().hex}"
         candidate_dir = root / "candidate"
@@ -157,6 +180,59 @@ class WorkflowTests(unittest.TestCase):
             packet_data = json.loads(Path(packet["packet_file"]).read_text(encoding="utf-8"))
             self.assertEqual(packet_data["active_phase"]["name"], "optical_flow")
             self.assertEqual(packet_data["budgets"]["rejected_so_far"], 0)
+        finally:
+            for path in sorted(root.rglob("*"), reverse=True):
+                if path.is_file():
+                    path.unlink()
+                elif path.is_dir():
+                    path.rmdir()
+            root.rmdir()
+
+    def test_human_acceptance_closes_active_phase(self) -> None:
+        root = Path(__file__).resolve().parents[1] / "work" / f"human_accept_test_{uuid.uuid4().hex}"
+        candidate_dir = root / "candidate"
+        candidate_dir.mkdir(parents=True)
+        manifest = candidate_dir / "candidate_manifest.json"
+        candidate_source = candidate_dir / "Candidate.h"
+        target_source = root / "target" / "Candidate.h"
+        report = candidate_dir / "baseline_report.json"
+        try:
+            candidate_source.write_text("baseline", encoding="utf-8")
+            target_source.parent.mkdir()
+            target_source.write_text("baseline", encoding="utf-8")
+            manifest.write_text(
+                json.dumps(
+                    {
+                        "effect_id": "ModelGenerated\\Test",
+                        "candidate_files": [str(candidate_source)],
+                        "target_files": [str(target_source)],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            self._write_controller_report(report, mse=10.0, ssim=0.9, motion_similarity=0.7)
+            start_refinement_phase(
+                candidate_manifest_file=manifest,
+                name="visual_review",
+                baseline_iteration=1,
+                report_file=report,
+                max_iterations=2,
+                max_rejected=1,
+            )
+            result = human_accept_candidate(
+                manifest,
+                iteration=1,
+                reviewer="Albert",
+                reason="Acceptable at normal playback.",
+            )
+            self.assertEqual(result["acceptance"]["status"], "human_accepted")
+            state = json.loads((candidate_dir / "candidate_state.json").read_text(encoding="utf-8"))
+            self.assertIsNone(state["active_phase"])
+            self.assertEqual(state["phases"][0]["status"], "closed")
+            self.assertEqual(state["human_acceptance"]["iteration"], 1)
+            self.assertEqual(state["history"][0]["status"], "human_accepted")
+            self.assertEqual(state["budgets"]["attempted_so_far"], 0)
+            self.assertEqual(state["budgets"]["rejected_so_far"], 0)
         finally:
             for path in sorted(root.rglob("*"), reverse=True):
                 if path.is_file():

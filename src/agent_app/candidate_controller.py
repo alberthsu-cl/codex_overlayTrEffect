@@ -138,6 +138,79 @@ def restore_candidate_baseline(candidate_manifest_file: Path) -> dict[str, Any]:
     }
 
 
+def human_accept_candidate(
+    candidate_manifest_file: Path,
+    iteration: int,
+    reviewer: str,
+    reason: str,
+) -> dict[str, Any]:
+    """Record a human visual acceptance for the currently selected baseline."""
+    reviewer = reviewer.strip()
+    reason = reason.strip()
+    if not reviewer:
+        raise ValueError("reviewer must not be empty")
+    if not reason:
+        raise ValueError("reason must not be empty")
+
+    state = _load_or_create_state(candidate_manifest_file)
+    baseline = state.get("baseline")
+    if not isinstance(baseline, dict):
+        raise ValueError("candidate has no selected baseline to accept")
+    if int(baseline.get("iteration", -1)) != iteration:
+        raise ValueError("human acceptance must reference the selected baseline iteration")
+
+    accepted_at = _timestamp()
+    acceptance = {
+        "iteration": iteration,
+        "status": "human_accepted",
+        "reviewer": reviewer,
+        "reason": reason,
+        "accepted_at": accepted_at,
+        "report_file": baseline.get("report_file", ""),
+        "source_snapshot": baseline.get("source_snapshot", ""),
+        "automated_metrics": "diagnostic_only",
+    }
+    state["human_acceptance"] = acceptance
+    for entry in state["history"]:
+        if int(entry.get("iteration", -1)) == iteration:
+            entry["status"] = "human_accepted"
+            entry["human_review"] = acceptance
+    _upsert_shortlist(
+        state,
+        iteration,
+        "human_accepted",
+        baseline.get("metrics", {}),
+        str(baseline.get("report_file", "")),
+    )
+    phase = _active_phase(state) or _phase_by_name(
+        state,
+        str(state.get("budgets", {}).get("phase", "")),
+    )
+    if phase is not None:
+        phase["status"] = "closed"
+        phase["closed_at"] = accepted_at
+        phase["closed_reason"] = "human_accepted"
+        first_iteration = int(phase["first_iteration"])
+        phase_history = [
+            item for item in state["history"] if int(item.get("iteration", 0)) >= first_iteration
+        ]
+        state["budgets"] = {
+            "phase": phase["name"],
+            "max_iterations": int(phase["max_iterations"]),
+            "max_rejected": int(phase["max_rejected"]),
+            "attempted_so_far": len(phase_history),
+            "rejected_so_far": sum(1 for item in phase_history if item.get("status") == "rejected"),
+            "status": "closed",
+        }
+    state["active_phase"] = None
+    _write_state(candidate_manifest_file, state)
+    return {
+        "status": "succeeded",
+        "acceptance": acceptance,
+        "state_file": str(_state_file(candidate_manifest_file)),
+    }
+
+
 def build_next_iteration_packet(
     candidate_manifest_file: Path,
     analysis_file: Path,
@@ -292,6 +365,7 @@ def candidate_status(candidate_manifest_file: Path) -> dict[str, Any]:
         "effect_id": state["effect_id"],
         "state_file": str(_state_file(candidate_manifest_file)),
         "baseline": state["baseline"],
+        "human_acceptance": state.get("human_acceptance"),
         "history": state["history"],
         "shortlist": state["shortlist"],
         "budgets": state.get("budgets"),
@@ -582,6 +656,15 @@ def _active_phase(state: dict[str, Any]) -> dict[str, Any] | None:
         return None
     for phase in state.get("phases", []):
         if isinstance(phase, dict) and phase.get("name") == active_name and phase.get("status") == "active":
+            return phase
+    return None
+
+
+def _phase_by_name(state: dict[str, Any], name: str) -> dict[str, Any] | None:
+    if not name:
+        return None
+    for phase in state.get("phases", []):
+        if isinstance(phase, dict) and phase.get("name") == name:
             return phase
     return None
 
