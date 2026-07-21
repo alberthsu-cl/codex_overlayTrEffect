@@ -335,6 +335,25 @@ conda run -n harness python agent/src/main.py candidate-next `
   --max-rejected 8
 ```
 
+When the scoring method changes materially, retain the existing history and
+start a new bounded phase instead of mixing incompatible budgets or metrics.
+For example, the optical-flow phase uses the re-scored iteration 5 baseline:
+
+```powershell
+conda run -n harness python agent/src/main.py candidate-start-phase `
+  --manifest agent/work/candidates/SeamlessSliding_02/candidate_manifest.json `
+  --name optical_flow `
+  --baseline-iteration 5 `
+  --report agent/work/optical_flow_score_baseline_v2.json `
+  --source-dir agent/work/candidates/SeamlessSliding_02/backups/evaluation_024 `
+  --max-iterations 5 `
+  --max-rejected 3
+```
+
+`candidate-next` then uses the active phase's budgets and only blocks a
+hypothesis category after three rejections in that phase. The full previous
+history remains in each packet for context.
+
 Read the emitted `iteration_XXX_codex_request.md` in the candidate `packets`
 folder and use it as the Codex editing request. Codex edits only the candidate
 workspace and adds one `iteration_XXX_*.json` record with a

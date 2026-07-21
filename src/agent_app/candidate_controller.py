@@ -57,6 +57,57 @@ def set_candidate_baseline(
     return {"status": "succeeded", "state": state}
 
 
+def start_refinement_phase(
+    candidate_manifest_file: Path,
+    name: str,
+    baseline_iteration: int,
+    report_file: Path,
+    max_iterations: int,
+    max_rejected: int,
+    source_dir: Path | None = None,
+) -> dict[str, Any]:
+    if not re.fullmatch(r"[a-z0-9_]+", name):
+        raise ValueError("phase name must use lowercase letters, digits, and underscores")
+    if max_iterations < 1 or max_rejected < 1:
+        raise ValueError("phase budgets must be positive")
+    baseline_result = set_candidate_baseline(
+        candidate_manifest_file=candidate_manifest_file,
+        iteration=baseline_iteration,
+        report_file=report_file,
+        source_dir=source_dir,
+    )
+    state = baseline_result["state"]
+    known_iterations = [number for number, _ in _iteration_records(candidate_manifest_file.parent)]
+    known_iterations.extend(
+        int(item["iteration"])
+        for item in state["history"]
+        if isinstance(item.get("iteration"), int)
+    )
+    first_iteration = max(known_iterations, default=0) + 1
+    phase = {
+        "name": name,
+        "baseline_iteration": baseline_iteration,
+        "first_iteration": first_iteration,
+        "max_iterations": max_iterations,
+        "max_rejected": max_rejected,
+        "started_at": _timestamp(),
+        "status": "active",
+    }
+    state.setdefault("phases", [])
+    state["phases"] = [item for item in state["phases"] if item.get("name") != name]
+    state["phases"].append(phase)
+    state["active_phase"] = name
+    state["budgets"] = {
+        "phase": name,
+        "max_iterations": max_iterations,
+        "max_rejected": max_rejected,
+        "attempted_so_far": 0,
+        "rejected_so_far": 0,
+    }
+    _write_state(candidate_manifest_file, state)
+    return {"status": "succeeded", "phase": phase, "state_file": str(_state_file(candidate_manifest_file))}
+
+
 def restore_candidate_baseline(candidate_manifest_file: Path) -> dict[str, Any]:
     state = _load_or_create_state(candidate_manifest_file)
     baseline = state.get("baseline")
@@ -107,20 +158,47 @@ def build_next_iteration_packet(
         known_iterations.append(int(state["baseline"]["iteration"]))
     last_iteration = max(known_iterations, default=0)
     next_iteration = last_iteration + 1
-    if next_iteration > max_iterations:
-        raise ValueError(
-            f"iteration budget exhausted: next iteration {next_iteration} exceeds {max_iterations}"
+    phase = _active_phase(state)
+    if phase is not None:
+        first_iteration = int(phase["first_iteration"])
+        attempted_count = sum(
+            1 for item in state["history"] if int(item.get("iteration", 0)) >= first_iteration
         )
-
-    rejected_count = sum(
-        1 for item in state["history"] if item.get("status") == "rejected"
-    )
-    if rejected_count >= max_rejected:
-        raise ValueError(
-            f"rejected-iteration budget exhausted: {rejected_count} reaches {max_rejected}"
+        rejected_count = sum(
+            1
+            for item in state["history"]
+            if int(item.get("iteration", 0)) >= first_iteration and item.get("status") == "rejected"
         )
-
-    blocked_categories = _blocked_categories(state)
+        phase_max_iterations = int(phase["max_iterations"])
+        phase_max_rejected = int(phase["max_rejected"])
+        if attempted_count >= phase_max_iterations:
+            raise ValueError(f"phase iteration budget exhausted: {attempted_count} reaches {phase_max_iterations}")
+        if rejected_count >= phase_max_rejected:
+            raise ValueError(f"phase rejected-iteration budget exhausted: {rejected_count} reaches {phase_max_rejected}")
+        blocked_categories = _blocked_categories(state, first_iteration)
+        budget = {
+            "phase": phase["name"],
+            "max_iterations": phase_max_iterations,
+            "max_rejected": phase_max_rejected,
+            "attempted_so_far": attempted_count,
+            "rejected_so_far": rejected_count,
+        }
+    else:
+        if next_iteration > max_iterations:
+            raise ValueError(
+                f"iteration budget exhausted: next iteration {next_iteration} exceeds {max_iterations}"
+            )
+        rejected_count = sum(1 for item in state["history"] if item.get("status") == "rejected")
+        if rejected_count >= max_rejected:
+            raise ValueError(
+                f"rejected-iteration budget exhausted: {rejected_count} reaches {max_rejected}"
+            )
+        blocked_categories = _blocked_categories(state)
+        budget = {
+            "max_iterations": max_iterations,
+            "max_rejected": max_rejected,
+            "rejected_so_far": rejected_count,
+        }
     latest_report = _latest_report(candidate_dir / "evaluations")
     latest_video = _latest_video(candidate_dir / "evaluations")
     latest_comparison = _latest_comparison_video(candidate_dir / "evaluations")
@@ -128,11 +206,7 @@ def build_next_iteration_packet(
     packet_file = candidate_dir / "packets" / f"iteration_{next_iteration:03d}_packet.json"
     prompt_file = candidate_dir / "packets" / f"iteration_{next_iteration:03d}_codex_request.md"
     candidate = load_json(candidate_manifest_file)
-    state["budgets"] = {
-        "max_iterations": max_iterations,
-        "max_rejected": max_rejected,
-        "rejected_so_far": rejected_count,
-    }
+    state["budgets"] = budget
     packet = {
         "artifact_type": "candidate_iteration_packet",
         "artifact_version": 1,
@@ -149,6 +223,7 @@ def build_next_iteration_packet(
         "baseline": state["baseline"],
         "history": state["history"],
         "shortlist": state["shortlist"],
+        "active_phase": phase,
         "allowed_hypothesis_categories": [
             category for category in HYPOTHESIS_CATEGORIES if category not in blocked_categories
         ],
@@ -220,7 +295,12 @@ def candidate_status(candidate_manifest_file: Path) -> dict[str, Any]:
         "history": state["history"],
         "shortlist": state["shortlist"],
         "budgets": state.get("budgets"),
-        "blocked_hypothesis_categories": _blocked_categories(state),
+        "phases": state.get("phases", []),
+        "active_phase": _active_phase(state),
+        "blocked_hypothesis_categories": _blocked_categories(
+            state,
+            int(_active_phase(state)["first_iteration"]) if _active_phase(state) else None,
+        ),
         "last_packet": state.get("last_packet"),
     }
 
@@ -241,6 +321,7 @@ def _load_or_create_state(candidate_manifest_file: Path) -> dict[str, Any]:
             "last_packet": None,
         }
     state.setdefault("shortlist", [])
+    state.setdefault("phases", [])
     if _import_legacy_history(candidate_manifest_file.parent, state):
         _write_state(candidate_manifest_file, state)
     return state
@@ -432,9 +513,18 @@ def _refresh_rejected_budget(state: dict[str, Any]) -> None:
     budgets = state.get("budgets")
     if not isinstance(budgets, dict):
         return
-    budgets["rejected_so_far"] = sum(
-        1 for item in state["history"] if item.get("status") == "rejected"
-    )
+    phase = _active_phase(state)
+    if phase is None:
+        budgets["rejected_so_far"] = sum(
+            1 for item in state["history"] if item.get("status") == "rejected"
+        )
+        return
+    first_iteration = int(phase["first_iteration"])
+    phase_history = [
+        item for item in state["history"] if int(item.get("iteration", 0)) >= first_iteration
+    ]
+    budgets["attempted_so_far"] = len(phase_history)
+    budgets["rejected_so_far"] = sum(1 for item in phase_history if item.get("status") == "rejected")
 
 
 def _import_legacy_history(candidate_dir: Path, state: dict[str, Any]) -> bool:
@@ -486,13 +576,25 @@ def _legacy_category(record: dict[str, Any], filename: str) -> str:
     return "other"
 
 
-def _blocked_categories(state: dict[str, Any]) -> list[str]:
+def _active_phase(state: dict[str, Any]) -> dict[str, Any] | None:
+    active_name = state.get("active_phase")
+    if not isinstance(active_name, str):
+        return None
+    for phase in state.get("phases", []):
+        if isinstance(phase, dict) and phase.get("name") == active_name and phase.get("status") == "active":
+            return phase
+    return None
+
+
+def _blocked_categories(state: dict[str, Any], first_iteration: int | None = None) -> list[str]:
     blocked: list[str] = []
     for category in HYPOTHESIS_CATEGORIES:
         rejected = sum(
             1
             for item in state["history"]
-            if item.get("hypothesis_category") == category and item.get("status") == "rejected"
+            if item.get("hypothesis_category") == category
+            and item.get("status") == "rejected"
+            and (first_iteration is None or int(item.get("iteration", 0)) >= first_iteration)
         )
         if rejected >= 3:
             blocked.append(category)

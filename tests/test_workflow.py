@@ -26,6 +26,7 @@ from agent_app.candidate_controller import (
     record_candidate_evaluation,
     restore_candidate_baseline,
     set_candidate_baseline,
+    start_refinement_phase,
 )
 
 
@@ -101,6 +102,61 @@ class WorkflowTests(unittest.TestCase):
             self.assertEqual(tradeoff["status"], "tradeoff")
             state_data = json.loads((candidate_dir / "candidate_state.json").read_text(encoding="utf-8"))
             self.assertEqual([item["iteration"] for item in state_data["shortlist"]], [1, 2, 3])
+        finally:
+            for path in sorted(root.rglob("*"), reverse=True):
+                if path.is_file():
+                    path.unlink()
+                elif path.is_dir():
+                    path.rmdir()
+            root.rmdir()
+
+    def test_controller_starts_independent_refinement_phase(self) -> None:
+        root = Path(__file__).resolve().parents[1] / "work" / f"phase_test_{uuid.uuid4().hex}"
+        candidate_dir = root / "candidate"
+        candidate_dir.mkdir(parents=True)
+        manifest = candidate_dir / "candidate_manifest.json"
+        candidate_source = candidate_dir / "Candidate.h"
+        target_source = root / "target" / "Candidate.h"
+        report = candidate_dir / "baseline_report.json"
+        analysis = candidate_dir / "analysis.json"
+        design = candidate_dir / "design.json"
+        try:
+            candidate_source.write_text("baseline", encoding="utf-8")
+            target_source.parent.mkdir()
+            target_source.write_text("baseline", encoding="utf-8")
+            manifest.write_text(
+                json.dumps(
+                    {
+                        "effect_id": "ModelGenerated\\Test",
+                        "candidate_files": [str(candidate_source)],
+                        "target_files": [str(target_source)],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            analysis.write_text("{}", encoding="utf-8")
+            design.write_text("{}", encoding="utf-8")
+            self._write_controller_report(report, mse=10.0, ssim=0.9, motion_similarity=0.7)
+            start = start_refinement_phase(
+                candidate_manifest_file=manifest,
+                name="optical_flow",
+                baseline_iteration=1,
+                report_file=report,
+                max_iterations=2,
+                max_rejected=1,
+            )
+            self.assertEqual(start["phase"]["first_iteration"], 2)
+            packet = build_next_iteration_packet(
+                candidate_manifest_file=manifest,
+                analysis_file=analysis,
+                design_file=design,
+                max_iterations=1,
+                max_rejected=1,
+            )
+            self.assertEqual(packet["iteration"], 2)
+            packet_data = json.loads(Path(packet["packet_file"]).read_text(encoding="utf-8"))
+            self.assertEqual(packet_data["active_phase"]["name"], "optical_flow")
+            self.assertEqual(packet_data["budgets"]["rejected_so_far"], 0)
         finally:
             for path in sorted(root.rglob("*"), reverse=True):
                 if path.is_file():

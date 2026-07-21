@@ -27,6 +27,7 @@ from .candidate_controller import (
     record_candidate_evaluation,
     restore_candidate_baseline,
     set_candidate_baseline,
+    start_refinement_phase,
 )
 
 
@@ -185,6 +186,16 @@ def main(argv: list[str] | None = None) -> int:
             )
         elif args.command == "candidate-restore-baseline":
             result = restore_candidate_baseline(Path(args.manifest).resolve())
+        elif args.command == "candidate-start-phase":
+            result = start_refinement_phase(
+                candidate_manifest_file=Path(args.manifest).resolve(),
+                name=args.name,
+                baseline_iteration=args.baseline_iteration,
+                report_file=Path(args.report).resolve(),
+                max_iterations=args.max_iterations,
+                max_rejected=args.max_rejected,
+                source_dir=Path(args.source_dir).resolve() if args.source_dir else None,
+            )
         elif args.command == "candidate-record-score":
             result = record_candidate_evaluation(
                 candidate_manifest_file=Path(args.manifest).resolve(),
@@ -390,6 +401,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="restore candidate and registered sources from the selected baseline snapshot",
     )
     candidate_restore.add_argument("--manifest", required=True)
+
+    candidate_phase = subparsers.add_parser(
+        "candidate-start-phase",
+        help="start a bounded refinement phase with a newly scored baseline",
+    )
+    candidate_phase.add_argument("--manifest", required=True)
+    candidate_phase.add_argument("--name", required=True)
+    candidate_phase.add_argument("--baseline-iteration", required=True, type=int)
+    candidate_phase.add_argument("--report", required=True)
+    candidate_phase.add_argument("--max-iterations", required=True, type=int)
+    candidate_phase.add_argument("--max-rejected", required=True, type=int)
+    candidate_phase.add_argument("--source-dir")
 
     candidate_record_score = subparsers.add_parser(
         "candidate-record-score",
