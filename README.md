@@ -82,37 +82,37 @@ an explicit bridge. It does not import the old analyzer or planner.
 Run local agent commands through the existing Conda environment:
 
 ```powershell
-conda run -n harness py -3 agent/src/main.py <command>
+conda run -n harness python agent/src/main.py <command>
 ```
 
 Do not rely on `conda activate` persisting between Codex command processes.
 The `harness` environment provides the required Python dependencies and
 `ffmpeg` for PNG scoring. In the command examples below, replace each
-`py -3 agent/src/main.py` prefix with `conda run -n harness py -3 agent/src/main.py`.
+`python agent/src/main.py` prefix with `conda run -n harness python agent/src/main.py`.
 
 ## First Local Commands
 
 Run these commands from `D:\\AI_Harness`:
 
 ```powershell
-py -3 agent/src/main.py --help
-py -3 agent/src/main.py prepare `
+python agent/src/main.py --help
+python agent/src/main.py prepare `
   --source-video harness/examples/sample_glitch.mp4 `
   --output-dir agent/work/reference_transition `
   --target-frame-count 30
 
-py -3 agent/src/main.py prepare-sources `
+python agent/src/main.py prepare-sources `
   --source-video harness/examples/sample_glitch.mp4 `
   --output-root agent/work/glitch_sources `
   --start-frame 0 `
   --end-frame 29 `
   --frame-count 30
 
-py -3 agent/src/main.py retrieve `
+python agent/src/main.py retrieve `
   --analysis agent/examples/sample_glitch.transition_analysis.json `
   --output agent/work/sample_glitch_retrieval.json
 
-py -3 agent/src/main.py benchmark `
+python agent/src/main.py benchmark `
   --analysis agent/examples/sample_glitch.transition_analysis.json `
   --source-a agent/work/glitch_sources/source_a `
   --source-b agent/work/glitch_sources/source_b `
@@ -129,11 +129,11 @@ by `build-job` and the later report step; it is not silently converted into a
 deterministic planner decision.
 
 ```powershell
-py -3 agent/src/main.py render `
+python agent/src/main.py render `
   --job harness/examples/render_job.sample.json `
   --output-root agent/work
 
-py -3 agent/src/main.py build-job `
+python agent/src/main.py build-job `
   --analysis agent/artifacts/transition_analysis.json `
   --design agent/artifacts/effect_design.json `
   --source-a harness/examples/inputs/source_a_clean `
@@ -141,14 +141,14 @@ py -3 agent/src/main.py build-job `
   --reference-transition agent/work/reference_transition `
   --output agent/work/agent_render_job.json
 
-py -3 agent/src/main.py score `
+python agent/src/main.py score `
   --candidate agent/work/<run>/artifacts `
   --reference agent/work/reference_transition `
   --output agent/work/<run>/reports/score.json `
   --width 1920 --height 1080 `
   --frame-start 24 --frame-end 42
 
-py -3 agent/src/main.py report `
+python agent/src/main.py report `
   --analysis agent/artifacts/transition_analysis.json `
   --design agent/artifacts/effect_design.json `
   --render-report agent/work/<run>/render_report.json `
@@ -192,7 +192,7 @@ supported effect template. The first generator supports IDs in the
 `ModelGenerated\\Dissolve_XX` family:
 
 ```powershell
-py -3 agent/src/main.py generate `
+python agent/src/main.py generate `
   --design agent/examples/generated_dissolve.effect_design.json `
   --output-dir agent/work/generated_dissolve_01 `
   --manifest agent/work/generated_dissolve_01/manifest.json
@@ -204,7 +204,7 @@ Visual Studio project. It refuses duplicate FX IDs, existing destination files,
 or missing source anchors.
 
 ```powershell
-py -3 agent/src/main.py register `
+python agent/src/main.py register `
   --manifest agent/work/generated_dissolve_01/manifest.json `
   --target-root overlaytrengine
 ```
@@ -216,7 +216,7 @@ and does not invoke `register` again. Initialize an isolated candidate workspace
 from the registered files:
 
 ```powershell
-py -3 agent/src/main.py candidate-init `
+python agent/src/main.py candidate-init `
   --manifest agent/work/boss_seamless_sliding_02_generated/manifest.json `
   --output-dir agent/work/candidates/SeamlessSliding_02
 ```
@@ -234,7 +234,7 @@ Build and render the candidate after each Codex edit. Promotion is explicit and
 backs up the currently registered source files first:
 
 ```powershell
-py -3 agent/src/main.py candidate-promote `
+python agent/src/main.py candidate-promote `
   --manifest agent/work/candidates/SeamlessSliding_02/candidate_manifest.json `
   --backup-dir agent/work/candidates/SeamlessSliding_02/backups/iteration_001
 
@@ -254,7 +254,7 @@ isolated evaluation should put the registered source files and Debug DLL back
 afterward:
 
 ```powershell
-py -3 agent/src/main.py candidate-evaluate `
+python agent/src/main.py candidate-evaluate `
   --manifest agent/work/candidates/SeamlessSliding_02/candidate_manifest.json `
   --job agent/work/generated_boss_job.json `
   --reference agent/work/boss_reference `
@@ -283,6 +283,13 @@ the same `artifacts` directory:
 The score report also includes `transition_diagnostics` with the five worst MSE
 frames and five lowest-SSIM frames in the configured transition window.
 
+For a transition window, scoring uses OpenCV dense optical flow to compare
+per-pixel 2D motion and dynamically derived motion regions. `motion_metrics`
+records vector error, direction agreement, region overlap, and a combined
+`motion_similarity` score. The dependency-free horizontal-band scorer remains
+only as a fallback when OpenCV is unavailable. These metrics complement, but
+do not replace, visual review for dissolves, masks, noise, or severe occlusion.
+
 ### Stateful refinement loop
 
 The controller keeps candidate-local history in `candidate_state.json`. It does
@@ -292,7 +299,7 @@ accepted baseline, and records the result after the candidate is evaluated.
 First select the verified baseline:
 
 ```powershell
-conda run -n harness py -3 agent/src/main.py candidate-set-baseline `
+conda run -n harness python agent/src/main.py candidate-set-baseline `
   --manifest agent/work/candidates/SeamlessSliding_02/candidate_manifest.json `
   --iteration 5 `
   --report agent/work/candidates/SeamlessSliding_02/evaluations/<baseline-run>/reports/candidate_iteration_report.json
@@ -305,14 +312,14 @@ After a rejected or tradeoff iteration has been reviewed, restore the selected
 baseline before starting a new hypothesis:
 
 ```powershell
-conda run -n harness py -3 agent/src/main.py candidate-restore-baseline `
+conda run -n harness python agent/src/main.py candidate-restore-baseline `
   --manifest agent/work/candidates/SeamlessSliding_02/candidate_manifest.json
 ```
 
 Then prepare the next bounded refinement request:
 
 ```powershell
-conda run -n harness py -3 agent/src/main.py candidate-next `
+conda run -n harness python agent/src/main.py candidate-next `
   --manifest agent/work/candidates/SeamlessSliding_02/candidate_manifest.json `
   --analysis agent/work/boss_transition_structure.json `
   --design agent/work/boss_effect_design.json `
@@ -330,9 +337,22 @@ updates the selected baseline only for accepted results.
 Use `candidate-status --manifest <candidate_manifest>` to inspect the current
 baseline, evaluation history, and blocked categories. Three rejected trials in
 one category block that category from future packets. The selection policy
-requires exact endpoint checks, then prefers preserving or improving both MSE
-and SSIM; a one-metric improvement is recorded as a tradeoff rather than
-silently replacing the baseline.
+requires exact endpoint checks. It accepts a material improvement in SSIM, MSE,
+or motion similarity only when the other comparable metrics remain within
+guardrails. Improvements with a meaningful regression are recorded as
+`tradeoff` entries in the candidate-local shortlist rather than silently
+replacing the baseline.
+
+Use `candidate-record-score` to attach a new score report to an existing
+iteration's already-rendered artifacts. This is useful when scoring metrics are
+improved without changing the shader or rebuilding the plugin:
+
+```powershell
+conda run -n harness python agent/src/main.py candidate-record-score `
+  --manifest agent/work/candidates/SeamlessSliding_02/candidate_manifest.json `
+  --iteration 9 `
+  --report agent/work/candidates/SeamlessSliding_02/evaluations/<run>/reports/motion_score.json
+```
 
 After registration, build the plugin, stage the DLL through the existing
 deployment flow, render with the headless renderer, and score the candidate
@@ -381,6 +401,12 @@ commands inside the repository you intend to change.
 
 - Keep Codex artifacts machine-readable and schema-validated.
 - Keep video preparation, rendering, and scoring local and reproducible.
+- Design scoring for arbitrary 2D motion and unknown spatial regions. Do not
+  treat a fixed band count or horizontal-only displacement as a general
+  transition model; such measures are diagnostics or fallbacks only.
+- Prefer established, maintained vision libraries when they improve scoring
+  fidelity. The `harness` Conda environment may gain runtime dependencies when
+  they are justified and documented.
 - Prefer an existing target effect when it is a credible match.
 - Do not generate open-ended shader code before visual evaluation exists.
 - Record confidence and limitations instead of inventing observations.

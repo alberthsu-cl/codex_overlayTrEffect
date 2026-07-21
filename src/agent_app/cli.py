@@ -24,6 +24,7 @@ from .codegen import (
 from .candidate_controller import (
     build_next_iteration_packet,
     candidate_status,
+    record_candidate_evaluation,
     restore_candidate_baseline,
     set_candidate_baseline,
 )
@@ -184,6 +185,12 @@ def main(argv: list[str] | None = None) -> int:
             )
         elif args.command == "candidate-restore-baseline":
             result = restore_candidate_baseline(Path(args.manifest).resolve())
+        elif args.command == "candidate-record-score":
+            result = record_candidate_evaluation(
+                candidate_manifest_file=Path(args.manifest).resolve(),
+                iteration=args.iteration,
+                report_file=Path(args.report).resolve(),
+            )
         elif args.command == "candidate-next":
             result = build_next_iteration_packet(
                 candidate_manifest_file=Path(args.manifest).resolve(),
@@ -383,6 +390,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="restore candidate and registered sources from the selected baseline snapshot",
     )
     candidate_restore.add_argument("--manifest", required=True)
+
+    candidate_record_score = subparsers.add_parser(
+        "candidate-record-score",
+        help="record an artifact-only score for an existing candidate iteration",
+    )
+    candidate_record_score.add_argument("--manifest", required=True)
+    candidate_record_score.add_argument("--iteration", required=True, type=int)
+    candidate_record_score.add_argument("--report", required=True)
 
     candidate_next = subparsers.add_parser(
         "candidate-next",

@@ -38,13 +38,14 @@ float4 Pixel_Shader(PS_INPUT input) : SV_TARGET
     float4 f4Result1 = float4(0.0, 0.0, 0.0, 0.0);
     float4 f4Result = float4(0.0, 0.0, 0.0, 0.0);
     float regionSign = input.Tex.y < 0.5 ? 1.0 : -1.0;
-    float2 f2BandDirection = f2Direction * regionSign;
+    float2 f2SourceADirection = f2Direction * regionSign;
+    float2 f2SourceBDirection = -f2SourceADirection;
 
     if ((!bSpeedUp) || (bSpeedUp && nTxIndex == 0))
     {
         for (int i = 0; i < nSampleCount; i += 1)
         {
-            f2TxCoordOffset = f2TxCoord - f2BandDirection * f4DistanceTable[i].x;
+            f2TxCoordOffset = f2TxCoord - f2SourceADirection * f4DistanceTable[i].x;
             f4Result0 += TextureA.Sample(samLinear, f2TxCoordOffset / f2AspectRatio) * f4DistanceTable[i].y;
         }
     }
@@ -53,7 +54,7 @@ float4 Pixel_Shader(PS_INPUT input) : SV_TARGET
     {
         for (int i = 0; i < nSampleCount; i += 1)
         {
-            f2TxCoordOffset = f2TxCoord - f2BandDirection * f4DistanceTable[i].x;
+            f2TxCoordOffset = f2TxCoord - f2SourceBDirection * f4DistanceTable[i].x;
             f4Result1 += TextureB.Sample(samLinear, f2TxCoordOffset / f2AspectRatio) * f4DistanceTable[i].y;
         }
     }

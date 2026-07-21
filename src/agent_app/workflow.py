@@ -524,6 +524,23 @@ def score_candidate(
             )
         )
         score["transition_diagnostics"] = _build_transition_diagnostics(score)
+        motion_scorer = modules.get("score_motion")
+        if motion_scorer is not None:
+            motion_metrics = motion_scorer(
+                candidate=candidate,
+                reference=reference,
+                width=width,
+                height=height,
+                frame_start=score["transition_window"]["frame_start"],
+                frame_end=score["transition_window"]["frame_end"],
+                ffmpeg_path=ffmpeg_path,
+            )
+            score["motion_metrics"] = motion_metrics
+            score["transition_diagnostics"]["worst_motion_pairs"] = sorted(
+                motion_metrics["pairs"],
+                key=lambda pair: float(pair.get("vector_mae", pair.get("mean_shift_error", 0.0))),
+                reverse=True,
+            )[:5]
     score["status"] = "succeeded"
     write_json(output_file, score)
     return score

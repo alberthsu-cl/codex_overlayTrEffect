@@ -56,7 +56,7 @@ class WorkflowTests(unittest.TestCase):
             )
             analysis.write_text("{}", encoding="utf-8")
             design.write_text("{}", encoding="utf-8")
-            self._write_controller_report(report, mse=10.0, ssim=0.9)
+            self._write_controller_report(report, mse=10.0, ssim=0.9, motion_similarity=0.7)
             state = set_candidate_baseline(manifest, iteration=1, report_file=report)
             self.assertEqual(state["status"], "succeeded")
             self.assertEqual(state["state"]["baseline"]["iteration"], 1)
@@ -84,11 +84,23 @@ class WorkflowTests(unittest.TestCase):
                 encoding="utf-8",
             )
             improved_report = candidate_dir / "improved_report.json"
-            self._write_controller_report(improved_report, mse=9.0, ssim=0.91)
+            self._write_controller_report(improved_report, mse=10.2, ssim=0.902, motion_similarity=0.7)
             outcome = record_candidate_evaluation(manifest, 2, improved_report)
             self.assertEqual(outcome["status"], "accepted")
             record = json.loads(iteration_file.read_text(encoding="utf-8"))
             self.assertEqual(record["status"], "accepted")
+
+            tradeoff_file = candidate_dir / "iteration_003_displacement.json"
+            tradeoff_file.write_text(
+                json.dumps({"iteration": 3, "hypothesis_category": "displacement", "status": "candidate_only"}),
+                encoding="utf-8",
+            )
+            tradeoff_report = candidate_dir / "tradeoff_report.json"
+            self._write_controller_report(tradeoff_report, mse=10.3, ssim=0.89, motion_similarity=0.75)
+            tradeoff = record_candidate_evaluation(manifest, 3, tradeoff_report)
+            self.assertEqual(tradeoff["status"], "tradeoff")
+            state_data = json.loads((candidate_dir / "candidate_state.json").read_text(encoding="utf-8"))
+            self.assertEqual([item["iteration"] for item in state_data["shortlist"]], [1, 2, 3])
         finally:
             for path in sorted(root.rglob("*"), reverse=True):
                 if path.is_file():
@@ -97,25 +109,39 @@ class WorkflowTests(unittest.TestCase):
                     path.rmdir()
             root.rmdir()
 
-    def _write_controller_report(self, path: Path, mse: float, ssim: float) -> None:
+    def _write_controller_report(
+        self,
+        path: Path,
+        mse: float,
+        ssim: float,
+        motion_similarity: float | None = None,
+    ) -> None:
+        score = {
+            "transition_window": {
+                "frame_start": 2,
+                "frame_end": 4,
+                "frame_count": 3,
+                "mse": mse,
+                "mae": 1.0,
+                "psnr_db": 20.0,
+                "ssim": ssim,
+            },
+            "endpoint_checks": {
+                "before_transition": {"mse": 0.0, "ssim": 1.0},
+                "after_transition": {"mse": 0.0, "ssim": 1.0},
+            },
+        }
+        if motion_similarity is not None:
+            score["motion_metrics"] = {
+                "motion_similarity": motion_similarity,
+                "flow_vector_mae": 1.0,
+                "motion_region_iou": 1.0,
+                "direction_agreement": 1.0,
+            }
         path.write_text(
             json.dumps(
                 {
-                    "score": {
-                        "transition_window": {
-                            "frame_start": 2,
-                            "frame_end": 4,
-                            "frame_count": 3,
-                            "mse": mse,
-                            "mae": 1.0,
-                            "psnr_db": 20.0,
-                            "ssim": ssim,
-                        },
-                        "endpoint_checks": {
-                            "before_transition": {"mse": 0.0, "ssim": 1.0},
-                            "after_transition": {"mse": 0.0, "ssim": 1.0},
-                        },
-                    }
+                    "score": score
                 }
             ),
             encoding="utf-8",
@@ -369,6 +395,14 @@ class WorkflowTests(unittest.TestCase):
         )()
         fake_modules = {
             "score_frame_sequences": lambda **_: fake_score,
+            "score_motion": lambda **_: {
+                "scorer": "opencv_farneback_dense_flow",
+                "motion_similarity": 0.75,
+                "flow_vector_mae": 2.0,
+                "motion_region_iou": 0.5,
+                "direction_agreement": 0.8,
+                "pairs": [{"vector_mae": 2.0}],
+            },
         }
 
         with patch("agent_app.workflow.load_harness_modules", return_value=fake_modules):
@@ -395,6 +429,8 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(result["endpoint_checks"]["before_transition"]["mse"], 0.0)
         self.assertEqual(result["endpoint_checks"]["after_transition"]["mse"], 6.0)
         self.assertEqual(result["transition_diagnostics"]["worst_mse_frames"][0]["frame_index"], 2)
+        self.assertEqual(result["motion_metrics"]["motion_similarity"], 0.75)
+        self.assertEqual(result["transition_diagnostics"]["worst_motion_pairs"][0]["vector_mae"], 2.0)
         write_json.assert_called_once()
 
     def test_build_report_preserves_all_artifacts(self) -> None:

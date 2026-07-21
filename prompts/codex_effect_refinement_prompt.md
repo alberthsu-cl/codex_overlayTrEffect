@@ -15,6 +15,7 @@ Read:
 - the current candidate iteration packet JSON
 - the latest render report
 - the latest score report
+- `motion_metrics` and worst-motion-pair diagnostics when the score report includes them
 - the latest candidate review MP4 when available
 - all source files under the candidate workspace
 
@@ -32,6 +33,10 @@ Rules:
 The transition may contain an arbitrary number of spatial regions. Do not assume
 that the image has only two or four regions. Infer region boundaries and motion
 from the reference frames when the evidence supports them.
+
+Treat MSE and SSIM as image-similarity signals, not a complete description of a
+transition. For horizontal banded motion, compare the candidate and reference
+motion diagnostics before changing displacement, direction, or region layout.
 
 After editing, summarize the intended change in a small JSON object containing:
 - iteration

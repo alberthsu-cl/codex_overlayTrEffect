@@ -20,6 +20,12 @@ HYPOTHESIS_CATEGORIES = (
     "shader_structure",
     "other",
 )
+SSIM_IMPROVEMENT = 0.001
+SSIM_REGRESSION_TOLERANCE = 0.003
+MSE_IMPROVEMENT_RATIO = 0.01
+MSE_REGRESSION_TOLERANCE = 0.03
+MOTION_SIMILARITY_IMPROVEMENT = 0.02
+MOTION_SIMILARITY_REGRESSION_TOLERANCE = 0.03
 
 
 def set_candidate_baseline(
@@ -45,6 +51,8 @@ def set_candidate_baseline(
         "selected_at": _timestamp(),
     }
     _upsert_history(state, iteration, "baseline", "accepted", metrics, str(report_file))
+    _upsert_shortlist(state, iteration, "accepted", metrics, str(report_file))
+    _refresh_rejected_budget(state)
     _write_state(candidate_manifest_file, state)
     return {"status": "succeeded", "state": state}
 
@@ -138,6 +146,7 @@ def build_next_iteration_packet(
         "latest_comparison_video": str(latest_comparison) if latest_comparison else None,
         "baseline": state["baseline"],
         "history": state["history"],
+        "shortlist": state["shortlist"],
         "allowed_hypothesis_categories": [
             category for category in HYPOTHESIS_CATEGORIES if category not in blocked_categories
         ],
@@ -167,7 +176,7 @@ def record_candidate_evaluation(
     state = _load_or_create_state(candidate_manifest_file)
     iteration_file = _find_iteration_file(candidate_manifest_file.parent, iteration)
     record = load_json(iteration_file)
-    category = record.get("hypothesis_category")
+    category = record.get("hypothesis_category") or _legacy_category(record, iteration_file.name)
     if category not in HYPOTHESIS_CATEGORIES:
         raise ValueError(
             f"iteration {iteration} must declare hypothesis_category from: {', '.join(HYPOTHESIS_CATEGORIES)}"
@@ -179,6 +188,8 @@ def record_candidate_evaluation(
     record["reason"] = reason
     write_json(iteration_file, record)
     _upsert_history(state, iteration, category, outcome, metrics, str(report_file))
+    if outcome in {"accepted", "tradeoff"}:
+        _upsert_shortlist(state, iteration, outcome, metrics, str(report_file))
     if outcome == "accepted":
         snapshot_dir = _snapshot_baseline_sources(
             candidate_manifest_file,
@@ -192,6 +203,7 @@ def record_candidate_evaluation(
             "source_snapshot": str(snapshot_dir),
             "selected_at": _timestamp(),
         }
+    _refresh_rejected_budget(state)
     _write_state(candidate_manifest_file, state)
     return {"status": outcome, "reason": reason, "state_file": str(_state_file(candidate_manifest_file))}
 
@@ -204,6 +216,7 @@ def candidate_status(candidate_manifest_file: Path) -> dict[str, Any]:
         "state_file": str(_state_file(candidate_manifest_file)),
         "baseline": state["baseline"],
         "history": state["history"],
+        "shortlist": state["shortlist"],
         "budgets": state.get("budgets"),
         "blocked_hypothesis_categories": _blocked_categories(state),
         "last_packet": state.get("last_packet"),
@@ -222,8 +235,10 @@ def _load_or_create_state(candidate_manifest_file: Path) -> dict[str, Any]:
             "effect_id": candidate["effect_id"],
             "baseline": None,
             "history": [],
+            "shortlist": [],
             "last_packet": None,
         }
+    state.setdefault("shortlist", [])
     if _import_legacy_history(candidate_manifest_file.parent, state):
         _write_state(candidate_manifest_file, state)
     return state
@@ -280,7 +295,7 @@ def _metrics_from_report(report: dict[str, Any]) -> dict[str, Any]:
     endpoints = score.get("endpoint_checks")
     if not isinstance(endpoints, dict):
         raise ValueError("evaluation report is missing endpoint checks")
-    return {
+    metrics = {
         "mse": _number(window, "mse"),
         "mae": _number(window, "mae"),
         "psnr_db": _number(window, "psnr_db"),
@@ -292,6 +307,20 @@ def _metrics_from_report(report: dict[str, Any]) -> dict[str, Any]:
         },
         "endpoint_checks": endpoints,
     }
+    motion = score.get("motion_metrics")
+    if isinstance(motion, dict):
+        motion_metrics = {
+            "motion_similarity": _number(motion, "motion_similarity"),
+            "direction_agreement": _number(motion, "direction_agreement"),
+        }
+        if isinstance(motion.get("flow_vector_mae"), (int, float)):
+            motion_metrics["flow_vector_mae"] = _number(motion, "flow_vector_mae")
+        if isinstance(motion.get("motion_region_iou"), (int, float)):
+            motion_metrics["motion_region_iou"] = _number(motion, "motion_region_iou")
+        if isinstance(motion.get("horizontal_shift_mae"), (int, float)):
+            motion_metrics["horizontal_shift_mae"] = _number(motion, "horizontal_shift_mae")
+        metrics["motion"] = motion_metrics
+    return metrics
 
 
 def _number(payload: dict[str, Any], key: str) -> float:
@@ -318,14 +347,42 @@ def _select_outcome(baseline: dict[str, Any] | None, metrics: dict[str, Any]) ->
     if baseline is None:
         return "accepted", "first valid evaluation becomes the baseline"
     previous = baseline["metrics"]
-    mse_improved = metrics["mse"] <= previous["mse"]
-    ssim_improved = metrics["ssim"] >= previous["ssim"]
-    strictly_improved = metrics["mse"] < previous["mse"] or metrics["ssim"] > previous["ssim"]
-    if mse_improved and ssim_improved and strictly_improved:
-        return "accepted", "improved or preserved MSE and SSIM while preserving endpoints"
-    if metrics["mse"] < previous["mse"] or metrics["ssim"] > previous["ssim"]:
-        return "tradeoff", "one primary metric improved while the other regressed"
-    return "rejected", "MSE and SSIM did not improve against the accepted baseline"
+    ssim_delta = metrics["ssim"] - previous["ssim"]
+    mse_change = (metrics["mse"] - previous["mse"]) / previous["mse"]
+    motion_delta = _motion_delta(metrics, previous)
+
+    materially_improved = (
+        ssim_delta >= SSIM_IMPROVEMENT
+        or mse_change <= -MSE_IMPROVEMENT_RATIO
+        or (motion_delta is not None and motion_delta >= MOTION_SIMILARITY_IMPROVEMENT)
+    )
+    within_guardrails = (
+        ssim_delta >= -SSIM_REGRESSION_TOLERANCE
+        and mse_change <= MSE_REGRESSION_TOLERANCE
+        and (
+            motion_delta is None
+            or motion_delta >= -MOTION_SIMILARITY_REGRESSION_TOLERANCE
+        )
+    )
+    if materially_improved and within_guardrails:
+        return "accepted", "improved a primary image or motion metric within Pareto guardrails"
+
+    any_improved = (
+        ssim_delta > 0
+        or mse_change < 0
+        or (motion_delta is not None and motion_delta > 0)
+    )
+    if any_improved:
+        return "tradeoff", "one image or motion metric improved while another regressed"
+    return "rejected", "image and motion metrics regressed against the accepted baseline"
+
+
+def _motion_delta(metrics: dict[str, Any], previous: dict[str, Any]) -> float | None:
+    motion = metrics.get("motion")
+    previous_motion = previous.get("motion")
+    if not isinstance(motion, dict) or not isinstance(previous_motion, dict):
+        return None
+    return float(motion["motion_similarity"]) - float(previous_motion["motion_similarity"])
 
 
 def _upsert_history(
@@ -347,6 +404,33 @@ def _upsert_history(
     state["history"] = [entry for entry in state["history"] if entry.get("iteration") != iteration]
     state["history"].append(item)
     state["history"].sort(key=lambda entry: int(entry["iteration"]))
+
+
+def _upsert_shortlist(
+    state: dict[str, Any],
+    iteration: int,
+    status: str,
+    metrics: dict[str, Any],
+    report_file: str,
+) -> None:
+    item = {
+        "iteration": iteration,
+        "status": status,
+        "metrics": metrics,
+        "report_file": report_file,
+    }
+    state["shortlist"] = [entry for entry in state["shortlist"] if entry.get("iteration") != iteration]
+    state["shortlist"].append(item)
+    state["shortlist"].sort(key=lambda entry: int(entry["iteration"]))
+
+
+def _refresh_rejected_budget(state: dict[str, Any]) -> None:
+    budgets = state.get("budgets")
+    if not isinstance(budgets, dict):
+        return
+    budgets["rejected_so_far"] = sum(
+        1 for item in state["history"] if item.get("status") == "rejected"
+    )
 
 
 def _import_legacy_history(candidate_dir: Path, state: dict[str, Any]) -> bool:
