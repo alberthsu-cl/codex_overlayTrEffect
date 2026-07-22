@@ -429,3 +429,31 @@ conda run -n harness python agent/src/main.py build-job `
 The job stores a per-frame `render.progress_schedule`; the native renderer
 uses it instead of a linear `0 -> 1` progression. Rebuild the native renderer
 after this feature changes, then evaluate again in a new backup directory.
+
+### Automatic Progress Calibration
+
+`candidate-evaluate` can now calibrate progress without editing the sample job.
+Use `--calibrate-progress` for an evaluation that first renders a temporary
+linear probe, measures the candidate's visible interval against stable source
+A and B, derives an evaluation-local schedule, and then runs the aligned render
+and score:
+
+```powershell
+conda run -n harness python agent/src/main.py candidate-evaluate `
+  --manifest "$candidateRoot/candidate_manifest.json" `
+  --job agent/work/samples/<sample-id>/jobs/render_job.json `
+  --reference agent/work/samples/<sample-id>/reference `
+  --output-root "$candidateRoot/evaluations" `
+  --backup-dir "$candidateRoot/backups/evaluation_<unique-number>" `
+  --msbuild "C:\Program Files\Microsoft Visual Studio\2022\Professional\MSBuild\Current\Bin\amd64\MSBuild.exe" `
+  --renderer harness/native_renderer/build/x64/Debug/OverlayTrHarnessRenderer.exe `
+  --width 1920 --height 1080 `
+  --frame-start <reference-transition-start> `
+  --frame-end <reference-transition-end> `
+  --calibrate-progress
+```
+
+The normal evaluation report contains `progress_calibration`, and its reports
+folder contains `progress_calibration.json`. The original sample
+`jobs/render_job.json` remains unchanged. This option is currently opt-in while
+the detector is validated across more samples.

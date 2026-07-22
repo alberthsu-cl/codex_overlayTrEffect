@@ -91,10 +91,6 @@ def main(argv: list[str] | None = None) -> int:
                 height=args.height,
                 fps=args.fps,
                 frame_count=args.frame_count,
-                progress_frame_start=args.progress_frame_start,
-                progress_frame_end=args.progress_frame_end,
-                progress_value_start=args.progress_value_start,
-                progress_value_end=args.progress_value_end,
                 renderer=args.renderer or _default_renderer(workspace_root),
                 ffmpeg_path=args.ffmpeg,
             )
@@ -196,6 +192,7 @@ def main(argv: list[str] | None = None) -> int:
                 frame_end=args.frame_end,
                 endpoint_frame_count=args.endpoint_frame_count,
                 iteration=args.iteration,
+                calibrate_progress=args.calibrate_progress,
             )
         elif args.command == "candidate-set-baseline":
             result = set_candidate_baseline(
@@ -425,6 +422,11 @@ def build_parser() -> argparse.ArgumentParser:
     candidate_evaluate.add_argument("--frame-start", type=int)
     candidate_evaluate.add_argument("--frame-end", type=int)
     candidate_evaluate.add_argument("--endpoint-frame-count", type=int, default=3)
+    candidate_evaluate.add_argument(
+        "--calibrate-progress",
+        action="store_true",
+        help="linear-probe the staged candidate and use an evaluation-local derived progress schedule",
+    )
     candidate_evaluate.add_argument(
         "--iteration",
         type=int,

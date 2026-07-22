@@ -16,6 +16,7 @@ from agent_app.workflow import (
     _encode_artifact_video,
     _create_comparison_assets,
     _build_progress_schedule,
+    _detect_progress_calibration,
     build_report,
     prepare_reference,
     prepare_sources,
@@ -40,6 +41,28 @@ from agent_app.codegen import (
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_progress_calibration_detects_visible_internal_interval(self) -> None:
+        calibration = _detect_progress_calibration(
+            mae_to_a=[0.0, 0.0, 0.0, 5.0, 14.0, 30.0, 40.0, 28.0, 12.0, 4.0, 0.0, 0.0],
+            mae_to_b=[80.0, 80.0, 80.0, 70.0, 55.0, 35.0, 25.0, 14.0, 5.0, 0.0, 0.0, 0.0],
+            source_mae=80.0,
+        )
+        self.assertEqual(calibration["status"], "succeeded")
+        self.assertEqual(calibration["active_frame_start"], 3)
+        self.assertEqual(calibration["active_frame_end"], 8)
+        self.assertAlmostEqual(calibration["active_progress_start"], 3 / 11)
+        self.assertAlmostEqual(calibration["active_progress_end"], 8 / 11)
+
+    def test_progress_calibration_falls_back_when_endpoints_are_indistinct(self) -> None:
+        calibration = _detect_progress_calibration(
+            mae_to_a=[0.0, 0.2, 0.4],
+            mae_to_b=[0.3, 0.2, 0.0],
+            source_mae=0.4,
+        )
+        self.assertEqual(calibration["status"], "needs_review")
+        self.assertEqual(calibration["active_progress_start"], 0.0)
+        self.assertEqual(calibration["active_progress_end"], 1.0)
+
     def test_progress_schedule_holds_and_stretches_shader_interval(self) -> None:
         schedule = _build_progress_schedule(
             frame_count=60,

@@ -696,6 +696,7 @@ def evaluate_candidate(
     frame_end: int | None = None,
     endpoint_frame_count: int = 3,
     iteration: int | None = None,
+    calibrate_progress: bool = False,
 ) -> dict[str, Any]:
     """Stage, build, render, and score a candidate, optionally restoring it afterward."""
     candidate = load_json(candidate_manifest_file)
@@ -748,9 +749,25 @@ def evaluate_candidate(
             raise FileNotFoundError(f"candidate build did not produce plugin DLL: {build_dll_path}")
         shutil.copyfile(build_dll_path, dll_path)
 
+        evaluation_job_file = job_file
+        calibration: dict[str, Any] | None = None
+        if calibrate_progress:
+            calibration = calibrate_candidate_progress(
+                workspace_root=workspace_root,
+                candidate_manifest_file=candidate_manifest_file,
+                job_file=job_file,
+                output_dir=backup_dir / "progress_calibration",
+                renderer=renderer,
+                width=width,
+                height=height,
+                frame_count=frame_count,
+                ffmpeg_path=ffmpeg_path,
+            )
+            evaluation_job_file = Path(calibration["aligned_job_file"])
+
         render_result = render_job(
             workspace_root=workspace_root,
-            job_file=job_file,
+            job_file=evaluation_job_file,
             output_root=output_root,
             renderer=renderer,
             ffmpeg_path=ffmpeg_path,
@@ -773,7 +790,7 @@ def evaluate_candidate(
             frame_end=frame_end,
             endpoint_frame_count=endpoint_frame_count,
         )
-        render_job_definition = load_json(job_file)
+        render_job_definition = load_json(evaluation_job_file)
         render_settings = render_job_definition.get("render", {})
         fps = render_settings.get("fps", 30)
         if not isinstance(fps, int) or fps < 1:
@@ -803,6 +820,13 @@ def evaluate_candidate(
             "score": score_result,
         }
         report["comparison"] = comparison
+        if calibration is not None:
+            calibration_file = run_root / "reports" / "progress_calibration.json"
+            write_json(calibration_file, calibration)
+            report["progress_calibration"] = {
+                **calibration,
+                "artifact_file": str(calibration_file),
+            }
         write_json(report_file, report)
         controller = (
             record_candidate_evaluation(
@@ -825,6 +849,182 @@ def evaluate_candidate(
                 shutil.copyfile(backup_path, target_path)
             if had_dll:
                 shutil.copyfile(dll_backup, dll_path)
+
+
+def calibrate_candidate_progress(
+    workspace_root: Path,
+    candidate_manifest_file: Path,
+    job_file: Path,
+    output_dir: Path,
+    renderer: str | None,
+    width: int,
+    height: int,
+    frame_count: int | None,
+    ffmpeg_path: str | None,
+) -> dict[str, Any]:
+    """Probe a candidate at linear progress and derive an evaluation-local schedule."""
+    if output_dir.exists():
+        raise FileExistsError(f"refusing to overwrite calibration directory: {output_dir}")
+    job = load_json(job_file)
+    render = job.get("render")
+    inputs = job.get("inputs")
+    if not isinstance(render, dict) or not isinstance(inputs, dict):
+        raise ValueError("candidate evaluation job is missing render or inputs")
+    count = frame_count or render.get("frame_count")
+    if not isinstance(count, int) or count < 2:
+        raise ValueError("candidate evaluation job has invalid render.frame_count")
+    source_a = _resolve_workspace_path(workspace_root, inputs.get("source_a"), "inputs.source_a")
+    source_b = _resolve_workspace_path(workspace_root, inputs.get("source_b"), "inputs.source_b")
+
+    output_dir.mkdir(parents=True)
+    probe_job = {**job, "render": {**render}}
+    probe_job["render"].pop("progress_schedule", None)
+    probe_job["job_name"] = f"{job.get('job_name', 'candidate')}_linear_probe"
+    probe_job_file = output_dir / "linear_probe_job.json"
+    write_json(probe_job_file, probe_job)
+    probe = render_job(
+        workspace_root=workspace_root,
+        job_file=probe_job_file,
+        output_root=output_dir / "runs",
+        renderer=renderer,
+        ffmpeg_path=ffmpeg_path,
+    )
+    if probe.get("status") != "succeeded":
+        raise RuntimeError(f"progress calibration probe failed: {probe.get('message')}")
+
+    probe_frames = Path(probe["artifacts_dir"])
+    mae_to_a, mae_to_b, source_mae = _probe_endpoint_distances(
+        probe_frames=probe_frames,
+        source_a=source_a,
+        source_b=source_b,
+        frame_count=count,
+    )
+    calibration = _detect_progress_calibration(
+        mae_to_a=mae_to_a,
+        mae_to_b=mae_to_b,
+        source_mae=source_mae,
+    )
+    reference_window = _reference_output_window(
+        candidate_manifest_file=candidate_manifest_file,
+        reference_path=_resolve_workspace_path(workspace_root, inputs.get("reference_transition"), "inputs.reference_transition"),
+        frame_count=count,
+        analysis_file=(job.get("planning") or {}).get("analysis_artifact") if isinstance(job.get("planning"), dict) else None,
+    )
+    schedule = _build_progress_schedule(
+        frame_count=count,
+        frame_start=reference_window["frame_start"],
+        frame_end=reference_window["frame_end"],
+        progress_start=calibration["active_progress_start"],
+        progress_end=calibration["active_progress_end"],
+    )
+    aligned_job = {**job, "render": {**render, "progress_schedule": schedule}}
+    aligned_job_file = output_dir / "aligned_evaluation_job.json"
+    write_json(aligned_job_file, aligned_job)
+    result = {
+        "artifact_type": "candidate_progress_calibration",
+        "artifact_version": 1,
+        "status": calibration["status"],
+        "method": "linear_probe_endpoint_distance",
+        "probe_job_file": str(probe_job_file),
+        "probe_render": probe,
+        "reference_window": reference_window,
+        "candidate_interval": calibration,
+        "aligned_job_file": str(aligned_job_file),
+    }
+    write_json(output_dir / "progress_calibration.json", result)
+    return result
+
+
+def _detect_progress_calibration(
+    mae_to_a: list[float], mae_to_b: list[float], source_mae: float
+) -> dict[str, Any]:
+    if len(mae_to_a) != len(mae_to_b) or len(mae_to_a) < 2:
+        raise ValueError("progress calibration requires matching probe endpoint scores")
+    threshold = max(2.0, source_mae * 0.03)
+    active = [min(distance_a, distance_b) > threshold for distance_a, distance_b in zip(mae_to_a, mae_to_b)]
+    indexes = [index for index, is_active in enumerate(active) if is_active]
+    count = len(active)
+    if len(indexes) < 2 or source_mae <= 2.0:
+        return {
+            "status": "needs_review",
+            "confidence": 0.0,
+            "reason": "probe did not show a reliable interval distinct from both endpoints; using linear progress",
+            "active_frame_start": 0,
+            "active_frame_end": count - 1,
+            "active_progress_start": 0.0,
+            "active_progress_end": 1.0,
+            "threshold_mae": threshold,
+            "source_endpoint_mae": source_mae,
+        }
+    start, end = indexes[0], indexes[-1]
+    confidence = 0.9 if start > 0 and end < count - 1 else 0.65
+    return {
+        "status": "succeeded",
+        "confidence": confidence,
+        "reason": "detected frames distinct from both stable endpoint sources",
+        "active_frame_start": start,
+        "active_frame_end": end,
+        "active_progress_start": start / (count - 1),
+        "active_progress_end": end / (count - 1),
+        "threshold_mae": threshold,
+        "source_endpoint_mae": source_mae,
+    }
+
+
+def _probe_endpoint_distances(
+    probe_frames: Path, source_a: Path, source_b: Path, frame_count: int
+) -> tuple[list[float], list[float], float]:
+    """Measure only the low-resolution endpoint distance required for calibration."""
+    try:
+        import cv2  # type: ignore[import-not-found]
+        import numpy  # type: ignore[import-not-found]
+    except ImportError as error:
+        raise RuntimeError("OpenCV and NumPy are required for progress calibration") from error
+
+    def read(path: Path) -> Any:
+        image = cv2.imread(str(path), cv2.IMREAD_COLOR)
+        if image is None:
+            raise RuntimeError(f"could not decode calibration frame: {path}")
+        return cv2.resize(image, (64, 36), interpolation=cv2.INTER_AREA).astype(numpy.float32)
+
+    a = read(source_a / "frame_0000.png")
+    b = read(source_b / "frame_0000.png")
+    mae_to_a: list[float] = []
+    mae_to_b: list[float] = []
+    for index in range(frame_count):
+        frame = read(probe_frames / f"frame_{index:04d}.png")
+        mae_to_a.append(float(numpy.mean(numpy.abs(frame - a))))
+        mae_to_b.append(float(numpy.mean(numpy.abs(frame - b))))
+    return mae_to_a, mae_to_b, float(numpy.mean(numpy.abs(a - b)))
+
+
+def _reference_output_window(
+    candidate_manifest_file: Path,
+    reference_path: Path,
+    frame_count: int,
+    analysis_file: str | None = None,
+) -> dict[str, int]:
+    manifest = load_json(candidate_manifest_file)
+    analysis_file = analysis_file or manifest.get("analysis_artifact")
+    reference_manifest = load_json(reference_path / "reference_transition_manifest.json")
+    mapping = reference_manifest.get("frame_progress_mapping")
+    if not isinstance(analysis_file, str) or not isinstance(mapping, list):
+        return {"frame_start": 0, "frame_end": frame_count - 1}
+    transition = load_json(Path(analysis_file)).get("transition", {})
+    start_source, end_source = transition.get("start_frame"), transition.get("end_frame")
+    if not isinstance(start_source, int) or not isinstance(end_source, int):
+        return {"frame_start": 0, "frame_end": frame_count - 1}
+    matched = [item.get("output_frame") for item in mapping if isinstance(item, dict) and start_source <= item.get("normalized_clip_source_frame", -1) <= end_source]
+    if not matched or not all(isinstance(item, int) for item in matched):
+        return {"frame_start": 0, "frame_end": frame_count - 1}
+    return {"frame_start": min(matched), "frame_end": max(matched)}
+
+
+def _resolve_workspace_path(workspace_root: Path, value: Any, field: str) -> Path:
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"candidate evaluation job has invalid {field}")
+    path = Path(value)
+    return path if path.is_absolute() else workspace_root / path
 
 
 def build_job_from_artifacts(
