@@ -91,6 +91,10 @@ def main(argv: list[str] | None = None) -> int:
                 height=args.height,
                 fps=args.fps,
                 frame_count=args.frame_count,
+                progress_frame_start=args.progress_frame_start,
+                progress_frame_end=args.progress_frame_end,
+                progress_value_start=args.progress_value_start,
+                progress_value_end=args.progress_value_end,
                 renderer=args.renderer or _default_renderer(workspace_root),
                 ffmpeg_path=args.ffmpeg,
             )
@@ -130,6 +134,10 @@ def main(argv: list[str] | None = None) -> int:
                 height=args.height,
                 fps=args.fps,
                 frame_count=args.frame_count,
+                progress_frame_start=args.progress_frame_start,
+                progress_frame_end=args.progress_frame_end,
+                progress_value_start=args.progress_value_start,
+                progress_value_end=args.progress_value_end,
             )
             result = {"status": "succeeded", "job": result, "output": str(Path(args.output).resolve())}
         elif args.command == "generate":
@@ -360,6 +368,10 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         help="override the render frame count; otherwise use the reference manifest, then 30",
     )
+    build_job.add_argument("--progress-frame-start", type=int)
+    build_job.add_argument("--progress-frame-end", type=int)
+    build_job.add_argument("--progress-value-start", type=float)
+    build_job.add_argument("--progress-value-end", type=float)
 
     generate = subparsers.add_parser(
         "generate",

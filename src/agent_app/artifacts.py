@@ -94,6 +94,7 @@ def build_render_job(
     height: int,
     fps: int,
     frame_count: int,
+    progress_schedule: list[float] | None = None,
 ) -> dict[str, Any]:
     analysis_issues = validate_transition_analysis(analysis)
     design_issues = validate_effect_design(design)
@@ -142,6 +143,7 @@ def build_render_job(
             "fps": fps,
             "frame_count": frame_count,
             "output_format": "png_sequence",
+            **({"progress_schedule": progress_schedule} if progress_schedule is not None else {}),
         },
         "planning": {
             "source": "agent_effect_design",

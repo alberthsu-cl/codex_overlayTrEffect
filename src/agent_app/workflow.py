@@ -838,8 +838,19 @@ def build_job_from_artifacts(
     height: int,
     fps: int,
     frame_count: int | None,
+    progress_frame_start: int | None = None,
+    progress_frame_end: int | None = None,
+    progress_value_start: float | None = None,
+    progress_value_end: float | None = None,
 ) -> dict[str, Any]:
     resolved_frame_count = frame_count or _reference_frame_count(reference_transition) or 30
+    progress_schedule = _build_progress_schedule(
+        frame_count=resolved_frame_count,
+        frame_start=progress_frame_start,
+        frame_end=progress_frame_end,
+        progress_start=progress_value_start,
+        progress_end=progress_value_end,
+    )
     job = build_render_job(
         analysis=load_json(analysis_file),
         design=load_json(design_file),
@@ -850,9 +861,43 @@ def build_job_from_artifacts(
         height=height,
         fps=fps,
         frame_count=resolved_frame_count,
+        progress_schedule=progress_schedule,
     )
     write_json(output_file, job)
     return job
+
+
+def _build_progress_schedule(
+    frame_count: int,
+    frame_start: int | None,
+    frame_end: int | None,
+    progress_start: float | None,
+    progress_end: float | None,
+) -> list[float] | None:
+    values = (frame_start, frame_end, progress_start, progress_end)
+    if all(value is None for value in values):
+        return None
+    if any(value is None for value in values):
+        raise ValueError(
+            "progress scheduling requires frame start/end and progress start/end together"
+        )
+    assert frame_start is not None and frame_end is not None
+    assert progress_start is not None and progress_end is not None
+    if frame_start < 0 or frame_end < frame_start or frame_end >= frame_count:
+        raise ValueError("progress frame range must be within the render frame count")
+    if not 0 <= progress_start <= progress_end <= 1:
+        raise ValueError("progress values must be non-decreasing and within 0 through 1")
+    span = frame_end - frame_start
+    return [
+        0.0
+        if frame_index < frame_start
+        else 1.0
+        if frame_index > frame_end
+        else progress_start
+        if span == 0
+        else progress_start + (progress_end - progress_start) * (frame_index - frame_start) / span
+        for frame_index in range(frame_count)
+    ]
 
 
 def _reference_frame_count(reference_transition: str | None) -> int | None:

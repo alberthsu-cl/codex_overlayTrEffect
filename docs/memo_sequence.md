@@ -370,3 +370,62 @@ Automation requirements that are not complete yet:
 
 Until those items are implemented, use the manual Codex review points in this
 memo and treat the local commands as the deterministic execution boundary.
+
+### Correct Renderer Progress Alignment
+
+If the reference and candidate begin or end their visible transitions on
+different output frames, treat this first as a renderer-progress calibration
+problem. It is not automatically a shader iteration or a reference-window
+problem.
+
+The intended controller behavior is:
+
+```text
+candidate shader
+  -> linear probe render
+  -> local active-interval detection
+  -> derive render.progress_schedule
+  -> aligned evaluation and scoring
+```
+
+The controller, not Codex or the user, owns `render_job.json`. It may update
+the generated `render.progress_schedule` after a probe, and it must record the
+detected candidate interval, confidence, and fallback reason with the
+evaluation artifacts. Codex may request recalibration in its iteration record
+after a timing or shader-structure edit, but must not edit the job directly.
+
+Retain the most recent calibrated schedule for region, displacement, blur, and
+blend edits. Re-probe after timing or shader-structure edits, or whenever a
+new probe indicates a material interval change. If detection is low confidence,
+fall back to linear progress and mark the evaluation for review.
+
+Only change shader timing when the aligned comparison still has incorrect
+onset, peak motion, or settling *within* the reference transition window.
+
+Until automatic probe calibration is implemented, use the following temporary
+manual fallback. Ask Codex to review the side-by-side comparison and report the
+reference transition frame range plus the candidate shader's visible active
+progress range.
+
+Rebuild the job with the reviewed mapping. The example below holds source A
+through reference frame 13, stretches the shader's existing active range from
+`24/59` through `40/59` across reference frames 14 through 43, then holds
+source B from frame 44 onward:
+
+```powershell
+conda run -n harness python agent/src/main.py build-job `
+  --analysis agent/work/samples/<sample-id>/analysis/transition_structure.json `
+  --design agent/work/samples/<sample-id>/design/effect_design.json `
+  --source-a agent/work/samples/<sample-id>/sources/source_a `
+  --source-b agent/work/samples/<sample-id>/sources/source_b `
+  --reference-transition agent/work/samples/<sample-id>/reference `
+  --output agent/work/samples/<sample-id>/jobs/render_job.json `
+  --progress-frame-start 14 `
+  --progress-frame-end 43 `
+  --progress-value-start 0.40677966 `
+  --progress-value-end 0.67796610
+```
+
+The job stores a per-frame `render.progress_schedule`; the native renderer
+uses it instead of a linear `0 -> 1` progression. Rebuild the native renderer
+after this feature changes, then evaluate again in a new backup directory.

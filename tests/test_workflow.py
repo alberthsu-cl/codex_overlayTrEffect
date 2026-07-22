@@ -15,6 +15,7 @@ if str(AGENT_SRC) not in sys.path:
 from agent_app.workflow import (
     _encode_artifact_video,
     _create_comparison_assets,
+    _build_progress_schedule,
     build_report,
     prepare_reference,
     prepare_sources,
@@ -39,6 +40,22 @@ from agent_app.codegen import (
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_progress_schedule_holds_and_stretches_shader_interval(self) -> None:
+        schedule = _build_progress_schedule(
+            frame_count=60,
+            frame_start=14,
+            frame_end=43,
+            progress_start=24 / 59,
+            progress_end=40 / 59,
+        )
+        self.assertEqual(len(schedule), 60)
+        self.assertEqual(schedule[0], 0.0)
+        self.assertEqual(schedule[13], 0.0)
+        self.assertAlmostEqual(schedule[14], 24 / 59)
+        self.assertAlmostEqual(schedule[43], 40 / 59)
+        self.assertEqual(schedule[44], 1.0)
+        self.assertEqual(schedule[59], 1.0)
+
     def test_prepare_reference_forwards_manual_transition_window(self) -> None:
         result = type(
             "ReferenceResult",

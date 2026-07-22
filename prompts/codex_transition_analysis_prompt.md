@@ -58,7 +58,14 @@ What to extract:
   - observable visual primitives for unknown families
   - whether a new effect is likely needed
   - whether the current constrained grammar can support implementation
-  - implementation notes only at a high level
+- implementation notes only at a high level
+
+Timing boundary:
+- Report timing only for the reference sample video: its stable A/B boundaries,
+  visible transition window, and normalized reference progression.
+- Do not infer, prescribe, or write a candidate renderer `progress_schedule`.
+  The local controller derives that separately from a probe render of the
+  generated candidate shader.
 
 Decision rules:
 - Use `family_status: "known"` only when the result maps to a known catalog or

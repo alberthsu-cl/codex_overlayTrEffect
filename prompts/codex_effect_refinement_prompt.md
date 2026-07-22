@@ -30,6 +30,8 @@ Rules:
 - choose exactly one hypothesis category: timing, regions, displacement, blur,
   blend, shader_structure, or other
 - do not repeat a rejected hypothesis category without new visual evidence
+- do not edit `render_job.json`, `progress_schedule`, render commands, or score
+  reports; those are controller-owned generated artifacts
 
 The transition may contain an arbitrary number of spatial regions. Do not assume
 that the image has only two or four regions. Infer region boundaries and motion
@@ -39,6 +41,14 @@ Treat MSE and SSIM as image-similarity signals, not a complete description of a
 transition. For horizontal banded motion, compare the candidate and reference
 motion diagnostics before changing displacement, direction, or region layout.
 
+Renderer progress alignment and shader timing are separate concerns. If the
+candidate begins or ends on different output frames from the reference, do not
+compensate by editing a render job. Request progress recalibration when a
+timing or shader-structure change may have changed the shader's visible active
+progress interval. Change shader timing only when the aligned comparison still
+shows incorrect onset, peak motion, or settling within the reference transition
+window.
+
 After editing, summarize the intended change in a small JSON object containing:
 - iteration
 - hypothesis_category
@@ -46,6 +56,10 @@ After editing, summarize the intended change in a small JSON object containing:
 - visual_hypothesis
 - expected_effect_change
 - unresolved_risks
+- request_progress_recalibration (optional boolean; use `true` only when the
+  controller should re-probe the candidate's visible active progress interval)
+- progress_calibration_reason (required when
+  `request_progress_recalibration` is `true`)
 ```
 
 Codex edits the candidate source. The local agent commands perform backup,
