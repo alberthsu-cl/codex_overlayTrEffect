@@ -54,7 +54,10 @@ New-effect delivery policy:
   `ModelGenerated\\<Family>_XX`. Inspect the registered ModelGenerated IDs
   before selecting the next index.
 - For `tune_existing_effect`, include `source_variant` with the base source
-  stem, source file names, and only exact, unambiguous initial replacements.
+  stem, source file names relative to `overlaytrengine/OverlayTrPlugInFx`, and
+  only exact effect-specific initial replacements. Do not add replacements for
+  the base class/stem, shader symbol, or base FX ID; generation handles those
+  names automatically.
 - `reuse_existing_effect` is permitted only when the request explicitly says
   that no new shader deliverable is required, such as a benchmark-only run.
 

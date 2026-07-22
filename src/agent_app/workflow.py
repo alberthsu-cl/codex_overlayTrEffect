@@ -23,6 +23,8 @@ def prepare_reference(
     height: int,
     target_frame_count: int,
     ffmpeg_path: str | None = None,
+    start_frame: int | None = None,
+    end_frame: int | None = None,
 ) -> dict[str, Any]:
     modules = load_harness_modules(workspace_root)
     result = modules["prepare_reference_transition"](
@@ -33,6 +35,8 @@ def prepare_reference(
         height=height,
         target_frame_count=target_frame_count,
         ffmpeg_path=ffmpeg_path,
+        start_frame=start_frame,
+        end_frame=end_frame,
     )
     return {
         "status": "succeeded",

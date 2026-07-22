@@ -108,6 +108,7 @@ def _generate_source_variant(
         raise ValueError("source variants require a ModelGenerated\\... effect ID")
 
     base_stem = variant.get("base_stem")
+    base_effect_id = target.get("base_effect_id") or target.get("closest_existing_effect_id")
     source_files = variant.get("source_files")
     replacements = variant.get("replacements", {})
     resource_files = variant.get("resource_files", [])
@@ -130,11 +131,24 @@ def _generate_source_variant(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     generated_files: list[str] = []
-    replacement_counts = {old: 0 for old in replacements}
+    replacement_counts = {
+        old: 0
+        for old, new in replacements.items()
+        if not _is_automatic_variant_replacement(
+            old=old,
+            new=new,
+            base_stem=base_stem,
+            base_effect_id=base_effect_id,
+            effect_id=effect_id,
+            symbol=symbol,
+            class_name=class_name,
+            shader_symbol=shader_symbol,
+        )
+    }
     for relative_name in source_files:
         if not isinstance(relative_name, str):
             raise ValueError("source_variant.source_files must contain strings")
-        template_path = template_root / relative_name
+        template_path = _resolve_variant_template_path(template_root, relative_name)
         if not template_path.exists():
             raise FileNotFoundError(f"source variant template not found: {template_path}")
         output_name = Path(relative_name).name.replace(base_stem, f"Tr{symbol}")
@@ -148,6 +162,17 @@ def _generate_source_variant(
         for old, new in replacements.items():
             if not isinstance(old, str) or not isinstance(new, str):
                 raise ValueError("source_variant.replacements must map strings to strings")
+            if _is_automatic_variant_replacement(
+                old=old,
+                new=new,
+                base_stem=base_stem,
+                base_effect_id=base_effect_id,
+                effect_id=effect_id,
+                symbol=symbol,
+                class_name=class_name,
+                shader_symbol=shader_symbol,
+            ):
+                continue
             count = source.count(old)
             if count > 1:
                 raise ValueError(f"source replacement must match exactly once: {old}")
@@ -186,7 +211,7 @@ def _generate_source_variant(
         "effect_id": effect_id,
         "family": target.get("family"),
         "template": "source_variant",
-        "base_effect_id": target.get("base_effect_id"),
+        "base_effect_id": base_effect_id,
         "base_stem": base_stem,
         "class_name": class_name,
         "shader_symbol": shader_symbol,
@@ -197,6 +222,44 @@ def _generate_source_variant(
     }
     write_json(manifest_file, manifest)
     return manifest
+
+
+def _resolve_variant_template_path(template_root: Path, source_name: str) -> Path:
+    """Accept template-relative paths and the repo-relative form Codex may emit."""
+    relative_path = Path(source_name)
+    direct_path = template_root / relative_path
+    if direct_path.exists():
+        return direct_path
+
+    parts = relative_path.parts
+    for index, part in enumerate(parts):
+        if part.lower() != template_root.name.lower():
+            continue
+        repo_relative_path = template_root.joinpath(*parts[index + 1 :])
+        if repo_relative_path.exists():
+            return repo_relative_path
+    return direct_path
+
+
+def _is_automatic_variant_replacement(
+    old: str,
+    new: str,
+    base_stem: str,
+    base_effect_id: Any,
+    effect_id: str,
+    symbol: str,
+    class_name: str,
+    shader_symbol: str,
+) -> bool:
+    """Ignore identity transformations already performed by source-variant generation."""
+    automatic_replacements = {
+        base_stem: f"Tr{symbol}",
+        f"C{base_stem}": class_name,
+        f"g_Tr_{base_stem.removeprefix('Tr')}_PS": shader_symbol,
+    }
+    if automatic_replacements.get(old) == new:
+        return True
+    return isinstance(base_effect_id, str) and old == base_effect_id and new == effect_id
 
 
 def register_effect(manifest_file: Path, target_root: Path) -> dict[str, Any]:
@@ -428,29 +491,46 @@ def _update_project_filters(
         )
         text = text.replace("  </ItemGroup>", filter_block + "  </ItemGroup>", 1)
 
-    def add_after(anchor: str, entry: str) -> None:
+    def add_after(anchors: tuple[str, ...], entry: str) -> None:
         nonlocal text
         if entry not in text:
-            if anchor not in text:
-                raise ValueError(f"filter anchor not found: {anchor}")
-            text = text.replace(anchor, anchor + "\n" + entry, 1)
+            for anchor in anchors:
+                if anchor in text:
+                    text = text.replace(anchor, anchor + "\n" + entry, 1)
+                    return
+            raise ValueError(f"filter anchor not found: {anchors[0]}")
 
     add_after(
-        f'    <ClCompile Include="{base_stem}.cpp">\n'
-        f'      <Filter>Transition\\{base_stem}</Filter>\n'
-        "    </ClCompile>",
+        (
+            f'    <ClCompile Include="{base_stem}.cpp">\n'
+            f'      <Filter>Transition\\{base_stem}</Filter>\n'
+            "    </ClCompile>",
+            f'    <ClCompile Include="{base_stem}.cpp">\n'
+            f'      <Filter>{filter_name}</Filter>\n'
+            "    </ClCompile>",
+        ),
         f'    <ClCompile Include="{cpp_filename}">\n      <Filter>{filter_name}</Filter>\n    </ClCompile>',
     )
     add_after(
-        f'    <ClInclude Include="{base_stem}.h">\n'
-        f'      <Filter>Transition\\{base_stem}</Filter>\n'
-        "    </ClInclude>",
+        (
+            f'    <ClInclude Include="{base_stem}.h">\n'
+            f'      <Filter>Transition\\{base_stem}</Filter>\n'
+            "    </ClInclude>",
+            f'    <ClInclude Include="{base_stem}.h">\n'
+            f'      <Filter>{filter_name}</Filter>\n'
+            "    </ClInclude>",
+        ),
         f'    <ClInclude Include="{header_filename}">\n      <Filter>{filter_name}</Filter>\n    </ClInclude>',
     )
     add_after(
-        f'    <FxCompile Include="{base_stem}_ps.hlsl">\n'
-        f'      <Filter>Transition\\{base_stem}</Filter>\n'
-        "    </FxCompile>",
+        (
+            f'    <FxCompile Include="{base_stem}_ps.hlsl">\n'
+            f'      <Filter>Transition\\{base_stem}</Filter>\n'
+            "    </FxCompile>",
+            f'    <FxCompile Include="{base_stem}_ps.hlsl">\n'
+            f'      <Filter>{filter_name}</Filter>\n'
+            "    </FxCompile>",
+        ),
         f'    <FxCompile Include="{shader_filename}">\n      <Filter>{filter_name}</Filter>\n    </FxCompile>',
     )
     return text

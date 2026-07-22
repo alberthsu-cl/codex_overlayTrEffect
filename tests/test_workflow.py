@@ -16,6 +16,7 @@ from agent_app.workflow import (
     _encode_artifact_video,
     _create_comparison_assets,
     build_report,
+    prepare_reference,
     prepare_sources,
     retrieve_effect,
     score_candidate,
@@ -30,9 +31,145 @@ from agent_app.candidate_controller import (
     start_refinement_phase,
 )
 from agent_app.sample_workspace import initialize_sample_workspace
+from agent_app.codegen import (
+    _is_automatic_variant_replacement,
+    _resolve_variant_template_path,
+    _update_project_filters,
+)
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_prepare_reference_forwards_manual_transition_window(self) -> None:
+        result = type(
+            "ReferenceResult",
+            (),
+            {
+                "message": "prepared",
+                "output_dir": Path("reference"),
+                "manifest_file": Path("reference/reference_transition_manifest.json"),
+                "frame_count": 30,
+                "detected_start_frame": 64,
+                "detected_end_frame": 93,
+                "detected_frame_count": 30,
+            },
+        )()
+        prepare = unittest.mock.Mock(return_value=result)
+        with patch("agent_app.workflow.load_harness_modules", return_value={"prepare_reference_transition": prepare}):
+            prepare_reference(
+                workspace_root=Path("workspace"),
+                source_video=Path("sample.mp4"),
+                output_dir=Path("reference"),
+                fps=30,
+                width=1920,
+                height=1080,
+                target_frame_count=60,
+                start_frame=64,
+                end_frame=93,
+            )
+        self.assertEqual(prepare.call_args.kwargs["start_frame"], 64)
+        self.assertEqual(prepare.call_args.kwargs["end_frame"], 93)
+
+    def test_project_filters_accept_shared_model_generated_base_filter(self) -> None:
+        base_stem = "TrModelGeneratedSeamlessSliding02"
+        text = "\n".join(
+            (
+                '<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">',
+                "  <ItemGroup>",
+                '    <Filter Include="Transition\\ModelGenerated">',
+                "      <UniqueIdentifier>{b7cf5f0d-3d70-4b3c-8d4b-3d66d64a8421}</UniqueIdentifier>",
+                "    </Filter>",
+                "  </ItemGroup>",
+                "  <ItemGroup>",
+                f'    <ClCompile Include="{base_stem}.cpp">',
+                "      <Filter>Transition\\ModelGenerated</Filter>",
+                "    </ClCompile>",
+                "  </ItemGroup>",
+                "  <ItemGroup>",
+                f'    <ClInclude Include="{base_stem}.h">',
+                "      <Filter>Transition\\ModelGenerated</Filter>",
+                "    </ClInclude>",
+                "  </ItemGroup>",
+                "  <ItemGroup>",
+                f'    <FxCompile Include="{base_stem}_ps.hlsl">',
+                "      <Filter>Transition\\ModelGenerated</Filter>",
+                "    </FxCompile>",
+                "  </ItemGroup>",
+                "</Project>",
+            )
+        )
+        updated = _update_project_filters(
+            text,
+            base_stem=base_stem,
+            cpp_filename="TrModelGeneratedSeamlessSplitSlide01.cpp",
+            header_filename="TrModelGeneratedSeamlessSplitSlide01.h",
+            shader_filename="TrModelGeneratedSeamlessSplitSlide01_ps.hlsl",
+        )
+        self.assertIn('Include="TrModelGeneratedSeamlessSplitSlide01.cpp"', updated)
+        self.assertIn('Include="TrModelGeneratedSeamlessSplitSlide01.h"', updated)
+        self.assertIn('Include="TrModelGeneratedSeamlessSplitSlide01_ps.hlsl"', updated)
+    def test_source_variant_accepts_repo_relative_template_path(self) -> None:
+        root = Path(__file__).resolve().parents[1] / "work" / f"variant_path_test_{uuid.uuid4().hex}"
+        template_root = root / "overlaytrengine" / "OverlayTrPlugInFx"
+        try:
+            template_root.mkdir(parents=True)
+            expected = template_root / "TrExample.h"
+            expected.write_text("example", encoding="utf-8")
+            resolved = _resolve_variant_template_path(
+                template_root,
+                "overlaytrengine/OverlayTrPlugInFx/TrExample.h",
+            )
+            self.assertEqual(resolved, expected)
+        finally:
+            for path in sorted(root.rglob("*"), reverse=True):
+                if path.is_file():
+                    path.unlink()
+                elif path.is_dir():
+                    path.rmdir()
+            root.rmdir()
+
+    def test_source_variant_ignores_automatic_renames(self) -> None:
+        self.assertTrue(
+            _is_automatic_variant_replacement(
+                old="TrModelGeneratedSeamlessSliding02",
+                new="TrModelGeneratedSeamlessSplitSlide01",
+                base_stem="TrModelGeneratedSeamlessSliding02",
+                base_effect_id="ModelGenerated\\SeamlessSliding_02",
+                effect_id="ModelGenerated\\SeamlessSplitSlide_01",
+                symbol="ModelGeneratedSeamlessSplitSlide01",
+                class_name="CTrModelGeneratedSeamlessSplitSlide01",
+                shader_symbol="g_Tr_ModelGeneratedSeamlessSplitSlide01_PS",
+            )
+        )
+
+    def test_source_variant_uses_schema_closest_effect_id(self) -> None:
+        target = {
+            "closest_existing_effect_id": "ModelGenerated\\SeamlessSliding_02",
+        }
+        self.assertTrue(
+            _is_automatic_variant_replacement(
+                old=target["closest_existing_effect_id"],
+                new="ModelGenerated\\SeamlessSplitSlide_01",
+                base_stem="TrModelGeneratedSeamlessSliding02",
+                base_effect_id=target.get("base_effect_id") or target.get("closest_existing_effect_id"),
+                effect_id="ModelGenerated\\SeamlessSplitSlide_01",
+                symbol="ModelGeneratedSeamlessSplitSlide01",
+                class_name="CTrModelGeneratedSeamlessSplitSlide01",
+                shader_symbol="g_Tr_ModelGeneratedSeamlessSplitSlide01_PS",
+            )
+        )
+        self.assertTrue(
+            _is_automatic_variant_replacement(
+                old="ModelGenerated\\SeamlessSliding_02",
+                new="ModelGenerated\\SeamlessSplitSlide_01",
+                base_stem="TrModelGeneratedSeamlessSliding02",
+                base_effect_id="ModelGenerated\\SeamlessSliding_02",
+                effect_id="ModelGenerated\\SeamlessSplitSlide_01",
+                symbol="ModelGeneratedSeamlessSplitSlide01",
+                class_name="CTrModelGeneratedSeamlessSplitSlide01",
+                shader_symbol="g_Tr_ModelGeneratedSeamlessSplitSlide01_PS",
+            )
+        )
+
     def test_sample_workspace_isolated_by_sample_id(self) -> None:
         root = Path(__file__).resolve().parents[1] / "work" / f"sample_workspace_test_{uuid.uuid4().hex}"
         source = root / "input.mp4"

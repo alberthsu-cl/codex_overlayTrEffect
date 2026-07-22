@@ -57,6 +57,8 @@ def main(argv: list[str] | None = None) -> int:
                 height=args.height,
                 target_frame_count=args.target_frame_count,
                 ffmpeg_path=args.ffmpeg,
+                start_frame=args.start_frame,
+                end_frame=args.end_frame,
             )
         elif args.command == "prepare-sources":
             result = prepare_sources(
@@ -271,6 +273,16 @@ def build_parser() -> argparse.ArgumentParser:
     prepare.add_argument("--height", type=int, default=1080)
     prepare.add_argument("--fps", type=int, default=30)
     prepare.add_argument("--target-frame-count", type=int, default=30)
+    prepare.add_argument(
+        "--start-frame",
+        type=int,
+        help="manual normalized-video transition start frame; requires --end-frame",
+    )
+    prepare.add_argument(
+        "--end-frame",
+        type=int,
+        help="manual normalized-video transition end frame; requires --start-frame",
+    )
     prepare.add_argument("--ffmpeg")
 
     prepare_sources_cmd = subparsers.add_parser(
