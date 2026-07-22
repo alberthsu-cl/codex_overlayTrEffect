@@ -25,6 +25,7 @@ from agent_app.workflow import (
 )
 from agent_app.artifacts import build_render_job
 from agent_app.candidate_controller import (
+    _endpoints_are_exact,
     build_next_iteration_packet,
     human_accept_candidate,
     record_candidate_evaluation,
@@ -41,6 +42,17 @@ from agent_app.codegen import (
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_controller_allows_negligible_endpoint_compression_variance(self) -> None:
+        metrics = {
+            "endpoint_checks": {
+                "before_transition": {"mse": 0.0, "ssim": 1.0},
+                "after_transition": {"mse": 0.056, "ssim": 0.999998},
+            }
+        }
+        self.assertTrue(_endpoints_are_exact(metrics))
+        metrics["endpoint_checks"]["after_transition"] = {"mse": 1.1, "ssim": 0.999998}
+        self.assertFalse(_endpoints_are_exact(metrics))
+
     def test_progress_calibration_detects_visible_internal_interval(self) -> None:
         calibration = _detect_progress_calibration(
             mae_to_a=[0.0, 0.0, 0.0, 5.0, 14.0, 30.0, 40.0, 28.0, 12.0, 4.0, 0.0, 0.0],

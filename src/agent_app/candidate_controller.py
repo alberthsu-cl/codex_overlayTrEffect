@@ -26,6 +26,8 @@ MSE_IMPROVEMENT_RATIO = 0.01
 MSE_REGRESSION_TOLERANCE = 0.03
 MOTION_SIMILARITY_IMPROVEMENT = 0.02
 MOTION_SIMILARITY_REGRESSION_TOLERANCE = 0.03
+ENDPOINT_MSE_TOLERANCE = 1.0
+ENDPOINT_SSIM_TOLERANCE = 0.999
 
 
 def set_candidate_baseline(
@@ -37,7 +39,7 @@ def set_candidate_baseline(
     state = _load_or_create_state(candidate_manifest_file)
     metrics = _metrics_from_report(load_json(report_file))
     if not _endpoints_are_exact(metrics):
-        raise ValueError("cannot set a baseline with non-exact endpoint checks")
+        raise ValueError("cannot set a baseline when endpoint checks exceed stable-frame tolerance")
     snapshot_dir = _snapshot_baseline_sources(
         candidate_manifest_file,
         iteration,
@@ -490,19 +492,24 @@ def _number(payload: dict[str, Any], key: str) -> float:
 
 
 def _endpoints_are_exact(metrics: dict[str, Any]) -> bool:
+    """Permit insignificant video-reference compression variance at stable endpoints."""
     endpoints = metrics["endpoint_checks"]
     for key in ("before_transition", "after_transition"):
         endpoint = endpoints.get(key)
         if not isinstance(endpoint, dict):
             return False
-        if endpoint.get("mse") != 0.0 or endpoint.get("ssim") != 1.0:
+        mse = endpoint.get("mse")
+        ssim = endpoint.get("ssim")
+        if not isinstance(mse, (int, float)) or not isinstance(ssim, (int, float)):
+            return False
+        if mse > ENDPOINT_MSE_TOLERANCE or ssim < ENDPOINT_SSIM_TOLERANCE:
             return False
     return True
 
 
 def _select_outcome(baseline: dict[str, Any] | None, metrics: dict[str, Any]) -> tuple[str, str]:
     if not _endpoints_are_exact(metrics):
-        return "rejected", "endpoint checks are no longer exact"
+        return "rejected", "endpoint checks exceed stable-frame tolerance"
     if baseline is None:
         return "accepted", "first valid evaluation becomes the baseline"
     previous = baseline["metrics"]
