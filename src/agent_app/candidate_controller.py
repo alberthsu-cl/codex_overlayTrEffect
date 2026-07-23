@@ -361,6 +361,53 @@ def set_evaluation_profile(
     return {"status": "succeeded", "state_file": str(_state_file(candidate_manifest_file)), "profile": profile}
 
 
+def continue_candidate_refinement(
+    candidate_manifest_file: Path,
+    analysis_file: Path,
+    design_file: Path,
+    max_iterations: int,
+    max_rejected: int,
+) -> dict[str, Any]:
+    """Prepare one bounded next iteration from the latest recorded evaluation."""
+    state = _load_or_create_state(candidate_manifest_file)
+    if state.get("human_acceptance"):
+        raise ValueError("candidate has been human accepted; start a new refinement phase before continuing")
+
+    evaluated = [
+        item
+        for item in state["history"]
+        if item.get("status") in {"accepted", "rejected", "tradeoff"}
+        and item.get("hypothesis_category") != "baseline"
+        and isinstance(item.get("iteration"), int)
+    ]
+    if not evaluated:
+        raise ValueError("candidate has no completed refinement evaluation to continue from")
+    latest = max(evaluated, key=lambda item: int(item["iteration"]))
+    outcome = str(latest["status"])
+    restoration = None
+    if outcome in {"rejected", "tradeoff"}:
+        restoration = restore_candidate_baseline(candidate_manifest_file)
+
+    packet = build_next_iteration_packet(
+        candidate_manifest_file=candidate_manifest_file,
+        analysis_file=analysis_file,
+        design_file=design_file,
+        max_iterations=max_iterations,
+        max_rejected=max_rejected,
+        evaluate_after_edit=True,
+    )
+    return {
+        "status": "succeeded",
+        "previous_iteration": latest["iteration"],
+        "previous_outcome": outcome,
+        "restored_baseline": restoration is not None,
+        "restoration": restoration,
+        "next_iteration": packet["iteration"],
+        "packet_file": packet["packet_file"],
+        "prompt_file": packet["prompt_file"],
+    }
+
+
 def record_candidate_evaluation(
     candidate_manifest_file: Path,
     iteration: int,
@@ -414,6 +461,7 @@ def candidate_status(candidate_manifest_file: Path) -> dict[str, Any]:
         "budgets": state.get("budgets"),
         "phases": state.get("phases", []),
         "active_phase": _active_phase(state),
+        "evaluation_profile_configured": isinstance(state.get("evaluation_profile"), dict),
         "blocked_hypothesis_categories": _blocked_categories(
             state,
             int(_active_phase(state)["first_iteration"]) if _active_phase(state) else None,

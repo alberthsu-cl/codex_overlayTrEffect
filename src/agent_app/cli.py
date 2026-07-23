@@ -25,6 +25,7 @@ from .codegen import (
 from .candidate_controller import (
     build_next_iteration_packet,
     candidate_status,
+    continue_candidate_refinement,
     human_accept_candidate,
     record_candidate_evaluation,
     restore_candidate_baseline,
@@ -268,6 +269,14 @@ def main(argv: list[str] | None = None) -> int:
                 max_iterations=args.max_iterations,
                 max_rejected=args.max_rejected,
                 evaluate_after_edit=args.evaluate_after_edit,
+            )
+        elif args.command == "candidate-continue":
+            result = continue_candidate_refinement(
+                candidate_manifest_file=Path(args.manifest).resolve(),
+                analysis_file=Path(args.analysis).resolve(),
+                design_file=Path(args.design).resolve(),
+                max_iterations=args.max_iterations,
+                max_rejected=args.max_rejected,
             )
         elif args.command == "candidate-status":
             result = candidate_status(Path(args.manifest).resolve())
@@ -569,6 +578,16 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="include one configured candidate evaluation command in the generated Codex request",
     )
+
+    candidate_continue = subparsers.add_parser(
+        "candidate-continue",
+        help="restore after a rejected/tradeoff evaluation and prepare the next edit-and-evaluate request",
+    )
+    candidate_continue.add_argument("--manifest", required=True)
+    candidate_continue.add_argument("--analysis", required=True)
+    candidate_continue.add_argument("--design", required=True)
+    candidate_continue.add_argument("--max-iterations", type=int, default=20)
+    candidate_continue.add_argument("--max-rejected", type=int, default=8)
 
     candidate_status_cmd = subparsers.add_parser(
         "candidate-status",

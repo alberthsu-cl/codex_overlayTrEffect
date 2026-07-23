@@ -28,6 +28,7 @@ from agent_app.candidate_controller import (
     _endpoints_are_exact,
     build_next_iteration_packet,
     human_accept_candidate,
+    continue_candidate_refinement,
     record_candidate_evaluation,
     restore_candidate_baseline,
     set_candidate_baseline,
@@ -366,7 +367,7 @@ class WorkflowTests(unittest.TestCase):
                 baseline_iteration=1,
                 report_file=report,
                 max_iterations=2,
-                max_rejected=1,
+                max_rejected=2,
             )
             self.assertEqual(start["phase"]["first_iteration"], 2)
             set_evaluation_profile(
@@ -405,6 +406,30 @@ class WorkflowTests(unittest.TestCase):
             self.assertIn("candidate-evaluate", request)
             self.assertIn("--iteration 2", request)
             self.assertIn("--calibrate-progress", request)
+
+            candidate_source.write_text("rejected", encoding="utf-8")
+            target_source.write_text("rejected", encoding="utf-8")
+            (candidate_dir / "iteration_002_blur.json").write_text(
+                json.dumps({"iteration": 2, "hypothesis_category": "blur", "status": "candidate_only"}),
+                encoding="utf-8",
+            )
+            rejected_report = candidate_dir / "rejected_report.json"
+            self._write_controller_report(rejected_report, mse=20.0, ssim=0.8, motion_similarity=0.5)
+            outcome = record_candidate_evaluation(manifest, 2, rejected_report)
+            self.assertEqual(outcome["status"], "rejected")
+
+            continued = continue_candidate_refinement(
+                candidate_manifest_file=manifest,
+                analysis_file=analysis,
+                design_file=design,
+                max_iterations=1,
+                max_rejected=1,
+            )
+            self.assertTrue(continued["restored_baseline"])
+            self.assertEqual(continued["next_iteration"], 3)
+            self.assertEqual(candidate_source.read_text(encoding="utf-8"), "baseline")
+            next_request = Path(continued["prompt_file"]).read_text(encoding="utf-8")
+            self.assertIn("--iteration 3", next_request)
         finally:
             for path in sorted(root.rglob("*"), reverse=True):
                 if path.is_file():

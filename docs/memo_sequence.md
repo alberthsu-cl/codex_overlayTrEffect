@@ -377,18 +377,20 @@ conda run -n harness python agent/src/main.py candidate-next `
   --evaluate-after-edit
 ```
 
-5. Read the controller outcome and loop:
-
-- `accepted`: the controller snapshots the new baseline automatically. Run
-  `candidate-next --evaluate-after-edit`, then use its new request.
-- `rejected` or an unwanted `tradeoff`: restore the selected baseline first,
-  then run `candidate-next --evaluate-after-edit` and ask Codex for a different
-  hypothesis:
+5. Read the controller outcome and loop. After an `accepted`, `rejected`, or
+`tradeoff` result, `candidate-continue` reads that outcome, restores the selected
+baseline for `rejected` or `tradeoff`, and creates the next edit-and-evaluate
+request automatically:
 
 ```powershell
-conda run -n harness python agent/src/main.py candidate-restore-baseline `
-  --manifest "$candidateRoot/candidate_manifest.json"
+conda run -n harness python agent/src/main.py candidate-continue `
+  --manifest "$candidateRoot/candidate_manifest.json" `
+  --analysis agent/work/samples/<sample-id>/analysis/transition_structure.json `
+  --design agent/work/samples/<sample-id>/design/effect_design.json
 ```
+
+Give the returned `prompt_file` to Codex. It contains the next iteration number,
+the baseline-restored candidate sources when needed, and one evaluation command.
 
 - visually acceptable but not diagnostically accepted: use
   `candidate-human-accept` to record the decision and close the active phase.
