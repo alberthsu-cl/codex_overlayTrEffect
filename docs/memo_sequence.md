@@ -364,10 +364,10 @@ conda run -n harness python agent/src/main.py candidate-set-evaluation-profile `
 ```
 
 4. Generate the next packet *after* the phase starts. The `--evaluate-after-edit`
-option writes exactly one evaluation command into the generated Codex request.
-Give `packets/iteration_001_codex_request.md` to Codex. Codex edits only the
-candidate workspace, runs the supplied evaluation, reads the controller outcome,
-and stops:
+option writes an evaluation command and a continuation command into the generated
+Codex request. Give `packets/iteration_001_codex_request.md` to Codex. Codex
+edits the candidate workspace, runs the supplied evaluation, and asks the local
+controller to prepare the next request:
 
 ```powershell
 conda run -n harness python agent/src/main.py candidate-next `
@@ -377,20 +377,11 @@ conda run -n harness python agent/src/main.py candidate-next `
   --evaluate-after-edit
 ```
 
-5. Read the controller outcome and loop. After an `accepted`, `rejected`, or
-`tradeoff` result, `candidate-continue` reads that outcome, restores the selected
-baseline for `rejected` or `tradeoff`, and creates the next edit-and-evaluate
-request automatically:
-
-```powershell
-conda run -n harness python agent/src/main.py candidate-continue `
-  --manifest "$candidateRoot/candidate_manifest.json" `
-  --analysis agent/work/samples/<sample-id>/analysis/transition_structure.json `
-  --design agent/work/samples/<sample-id>/design/effect_design.json
-```
-
-Give the returned `prompt_file` to Codex. It contains the next iteration number,
-the baseline-restored candidate sources when needed, and one evaluation command.
+5. When the scored outcome is `accepted`, `rejected`, or `tradeoff`, the request
+invokes `candidate-continue`. It restores the selected baseline for `rejected`
+or `tradeoff` and returns the next `prompt_file`. Give that new request to Codex.
+Codex stops after each continuation; it does not edit more than one candidate
+iteration per request.
 
 - visually acceptable but not diagnostically accepted: use
   `candidate-human-accept` to record the decision and close the active phase.

@@ -284,11 +284,19 @@ def build_next_iteration_packet(
     prompt_file = candidate_dir / "packets" / f"iteration_{next_iteration:03d}_codex_request.md"
     candidate = load_json(candidate_manifest_file)
     evaluation_command = None
+    continuation_command = None
     if evaluate_after_edit:
         profile = state.get("evaluation_profile")
         if not isinstance(profile, dict):
             raise ValueError("candidate has no evaluation profile; run candidate-set-evaluation-profile first")
         evaluation_command = _evaluation_command(profile, next_iteration)
+        continuation_command = _continuation_command(
+            candidate_manifest_file,
+            analysis_file,
+            design_file,
+            max_iterations,
+            max_rejected,
+        )
     state["budgets"] = budget
     packet = {
         "artifact_type": "candidate_iteration_packet",
@@ -316,6 +324,7 @@ def build_next_iteration_packet(
         "budgets": state["budgets"],
         "evaluation_after_edit": evaluate_after_edit,
         "evaluation_command": evaluation_command,
+        "continuation_command": continuation_command,
     }
     packet["packet_file"] = str(packet_file)
     write_json(packet_file, packet)
@@ -837,6 +846,24 @@ def _evaluation_command(profile: dict[str, Any], iteration: int) -> str:
     return "\n".join(lines)
 
 
+def _continuation_command(
+    candidate_manifest_file: Path,
+    analysis_file: Path,
+    design_file: Path,
+    max_iterations: int,
+    max_rejected: int,
+) -> str:
+    return "\n".join(
+        [
+            "conda run -n harness python agent/src/main.py candidate-continue `",
+            f'  --manifest "{candidate_manifest_file}" `',
+            f'  --analysis "{analysis_file}" `',
+            f'  --design "{design_file}" `',
+            f"  --max-iterations {max_iterations} --max-rejected {max_rejected}",
+        ]
+    )
+
+
 def _refinement_request(packet: dict[str, Any], candidate_dir: Path) -> str:
     allowed = ", ".join(packet["allowed_hypothesis_categories"])
     return f"""Read:
@@ -869,13 +896,23 @@ def _evaluation_instruction(packet: dict[str, Any]) -> str:
     command = packet.get("evaluation_command")
     if not isinstance(command, str):
         return "Do not run evaluation; the controller will run it after the edit."
+    continuation = packet.get("continuation_command")
+    continuation_instruction = "Read the resulting controller outcome and stop."
+    if isinstance(continuation, str):
+        continuation_instruction = f"""Read the resulting controller outcome. If it is `accepted`, `rejected`, or `tradeoff`, run exactly this continuation command:
+
+```powershell
+{continuation}
+```
+
+The continuation command restores the selected baseline when required and creates the next Codex request. Stop after it returns; do not edit the next iteration."""
     return f"""After editing, run exactly this evaluation command:
 
 ```powershell
 {command}
 ```
 
-Read the resulting controller outcome and stop. Do not start another refinement iteration."""
+{continuation_instruction}"""
 
 
 def _timestamp() -> str:

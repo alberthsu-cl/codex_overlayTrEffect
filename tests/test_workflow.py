@@ -404,6 +404,7 @@ class WorkflowTests(unittest.TestCase):
             self.assertEqual(packet_data["budgets"]["rejected_so_far"], 0)
             request = Path(packet["prompt_file"]).read_text(encoding="utf-8")
             self.assertIn("candidate-evaluate", request)
+            self.assertIn("candidate-continue", request)
             self.assertIn("--iteration 2", request)
             self.assertIn("--calibrate-progress", request)
 

@@ -25,7 +25,7 @@
 
   <rect class="bg" x="0" y="0" width="1800" height="1120"/>
   <text class="title" x="50" y="52">Codex-Driven Flow</text>
-  <text class="small" x="50" y="82">One registered FX ID is refined in an isolated workspace; local commands provide deterministic evaluation.</text>
+  <text class="small" x="50" y="82">Motion diagnostics guide Codex interpretation; one registered FX ID is refined in an isolated workspace.</text>
 
   <rect class="codex" x="1040" y="32" width="210" height="42"/>
   <text class="legend" x="1145" y="59" text-anchor="middle">Codex inference / editing</text>
@@ -37,35 +37,40 @@
   <rect class="band" x="30" y="115" width="1740" height="235" rx="16"/>
   <text class="band-title" x="55" y="150"> Understand the sample</text>
 
-  <rect class="command" x="55" y="185" width="250" height="105"/>
-  <text class="text" x="180" y="225" text-anchor="middle">Prepare video</text>
-  <text class="small" x="180" y="255" text-anchor="middle">normalize / extract frames</text>
+  <rect class="command" x="55" y="185" width="205" height="105"/>
+  <text class="text" x="157" y="225" text-anchor="middle">Prepare video</text>
+  <text class="small" x="157" y="255" text-anchor="middle">normalize / extract frames</text>
 
-  <rect class="codex" x="355" y="185" width="250" height="105"/>
-  <text class="text" x="480" y="225" text-anchor="middle">Codex video</text>
-  <text class="text" x="480" y="253" text-anchor="middle">analysis</text>
+  <rect class="command" x="280" y="185" width="205" height="105"/>
+  <text class="text" x="382" y="225" text-anchor="middle">Motion diagnostics</text>
+  <text class="small" x="382" y="255" text-anchor="middle">dense flow + regions</text>
 
-  <rect class="artifact" x="655" y="185" width="250" height="105"/>
-  <text class="text" x="780" y="225" text-anchor="middle">transition_</text>
-  <text class="text" x="780" y="253" text-anchor="middle">analysis.json</text>
+  <rect class="codex" x="505" y="185" width="205" height="105"/>
+  <text class="text" x="607" y="225" text-anchor="middle">Codex video</text>
+  <text class="text" x="607" y="253" text-anchor="middle">analysis</text>
 
-  <rect class="command" x="955" y="185" width="250" height="105"/>
-  <text class="text" x="1080" y="225" text-anchor="middle">Prepare source</text>
-  <text class="small" x="1080" y="255" text-anchor="middle">A/B frames + reference</text>
+  <rect class="artifact" x="730" y="185" width="205" height="105"/>
+  <text class="text" x="832" y="225" text-anchor="middle">transition_</text>
+  <text class="text" x="832" y="253" text-anchor="middle">analysis.json</text>
 
-  <rect class="codex" x="1255" y="185" width="250" height="105"/>
-  <text class="text" x="1380" y="225" text-anchor="middle">Codex effect</text>
-  <text class="text" x="1380" y="253" text-anchor="middle">design and tuning</text>
+  <rect class="command" x="955" y="185" width="205" height="105"/>
+  <text class="text" x="1057" y="225" text-anchor="middle">Prepare source</text>
+  <text class="small" x="1057" y="255" text-anchor="middle">A/B frames + reference</text>
 
-  <rect class="artifact" x="1555" y="185" width="180" height="105"/>
-  <text class="text" x="1645" y="225" text-anchor="middle">effect_</text>
-  <text class="text" x="1645" y="253" text-anchor="middle">design.json</text>
+  <rect class="codex" x="1180" y="185" width="205" height="105"/>
+  <text class="text" x="1282" y="225" text-anchor="middle">Codex effect</text>
+  <text class="text" x="1282" y="253" text-anchor="middle">design and tuning</text>
 
-  <path class="line" d="M305 237 H355"/>
-  <path class="line" d="M605 237 H655"/>
-  <path class="line" d="M906 237 H955"/>
-  <path class="line" d="M1205 237 H1255"/>
-  <path class="line" d="M1505 237 H1555"/>
+  <rect class="artifact" x="1465" y="185" width="205" height="105"/>
+  <text class="text" x="1567" y="225" text-anchor="middle">effect_</text>
+  <text class="text" x="1567" y="253" text-anchor="middle">design.json</text>
+
+  <path class="line" d="M260 237 H280"/>
+  <path class="line" d="M485 237 H505"/>
+  <path class="line" d="M710 237 H730"/>
+  <path class="line" d="M935 237 H955"/>
+  <path class="line" d="M1160 237 H1180"/>
+  <path class="line" d="M1385 237 H1465"/>
 
   <rect class="band" x="30" y="380" width="1740" height="235" rx="16"/>
   <text class="band-title" x="55" y="415">Candidate setup</text>
@@ -94,7 +99,7 @@
   <path class="line" d="M605 502 H655"/>
   <path class="line" d="M906 502 H955"/>
   <path class="line" d="M1205 502 H1255"/>
-  <path class="line" d="M1645 290 V345 H180 V450"/>
+  <path class="line" d="M1567 290 V345 H180 V450"/>
 
   <rect class="band" x="30" y="645" width="1740" height="265" rx="16"/>
   <text class="band-title" x="55" y="680">Deterministic evaluation loop</text>
