@@ -31,6 +31,7 @@ from agent_app.candidate_controller import (
     record_candidate_evaluation,
     restore_candidate_baseline,
     set_candidate_baseline,
+    set_evaluation_profile,
     start_refinement_phase,
 )
 from agent_app.sample_workspace import initialize_sample_workspace
@@ -368,17 +369,42 @@ class WorkflowTests(unittest.TestCase):
                 max_rejected=1,
             )
             self.assertEqual(start["phase"]["first_iteration"], 2)
+            set_evaluation_profile(
+                manifest,
+                {
+                    "manifest": str(manifest),
+                    "job": str(root / "render_job.json"),
+                    "reference": str(root / "reference"),
+                    "output_root": str(candidate_dir / "evaluations"),
+                    "backup_root": str(candidate_dir / "backups"),
+                    "msbuild": "C:/tools/MSBuild.exe",
+                    "renderer": "C:/tools/OverlayTrHarnessRenderer.exe",
+                    "configuration": "Debug",
+                    "platform": "x64",
+                    "width": 1920,
+                    "height": 1080,
+                    "frame_start": 14,
+                    "frame_end": 43,
+                    "calibrate_progress": True,
+                },
+            )
             packet = build_next_iteration_packet(
                 candidate_manifest_file=manifest,
                 analysis_file=analysis,
                 design_file=design,
                 max_iterations=1,
                 max_rejected=1,
+                evaluate_after_edit=True,
             )
             self.assertEqual(packet["iteration"], 2)
+            self.assertTrue(packet["evaluation_after_edit"])
             packet_data = json.loads(Path(packet["packet_file"]).read_text(encoding="utf-8"))
             self.assertEqual(packet_data["active_phase"]["name"], "optical_flow")
             self.assertEqual(packet_data["budgets"]["rejected_so_far"], 0)
+            request = Path(packet["prompt_file"]).read_text(encoding="utf-8")
+            self.assertIn("candidate-evaluate", request)
+            self.assertIn("--iteration 2", request)
+            self.assertIn("--calibrate-progress", request)
         finally:
             for path in sorted(root.rglob("*"), reverse=True):
                 if path.is_file():

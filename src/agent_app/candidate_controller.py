@@ -219,6 +219,7 @@ def build_next_iteration_packet(
     design_file: Path,
     max_iterations: int,
     max_rejected: int,
+    evaluate_after_edit: bool = False,
 ) -> dict[str, Any]:
     state = _load_or_create_state(candidate_manifest_file)
     candidate_dir = candidate_manifest_file.parent
@@ -282,6 +283,12 @@ def build_next_iteration_packet(
     packet_file = candidate_dir / "packets" / f"iteration_{next_iteration:03d}_packet.json"
     prompt_file = candidate_dir / "packets" / f"iteration_{next_iteration:03d}_codex_request.md"
     candidate = load_json(candidate_manifest_file)
+    evaluation_command = None
+    if evaluate_after_edit:
+        profile = state.get("evaluation_profile")
+        if not isinstance(profile, dict):
+            raise ValueError("candidate has no evaluation profile; run candidate-set-evaluation-profile first")
+        evaluation_command = _evaluation_command(profile, next_iteration)
     state["budgets"] = budget
     packet = {
         "artifact_type": "candidate_iteration_packet",
@@ -307,6 +314,8 @@ def build_next_iteration_packet(
         ],
         "blocked_hypothesis_categories": blocked_categories,
         "budgets": state["budgets"],
+        "evaluation_after_edit": evaluate_after_edit,
+        "evaluation_command": evaluation_command,
     }
     packet["packet_file"] = str(packet_file)
     write_json(packet_file, packet)
@@ -320,7 +329,36 @@ def build_next_iteration_packet(
         "packet_file": str(packet_file),
         "prompt_file": str(prompt_file),
         "blocked_hypothesis_categories": blocked_categories,
+        "evaluation_after_edit": evaluate_after_edit,
     }
+
+
+def set_evaluation_profile(
+    candidate_manifest_file: Path,
+    profile: dict[str, Any],
+) -> dict[str, Any]:
+    required_strings = (
+        "manifest",
+        "job",
+        "reference",
+        "output_root",
+        "backup_root",
+        "msbuild",
+        "renderer",
+    )
+    for key in required_strings:
+        if not isinstance(profile.get(key), str) or not profile[key]:
+            raise ValueError(f"evaluation profile requires {key}")
+    for key in ("width", "height"):
+        if not isinstance(profile.get(key), int) or profile[key] < 1:
+            raise ValueError(f"evaluation profile requires a positive {key}")
+    start, end = profile.get("frame_start"), profile.get("frame_end")
+    if not isinstance(start, int) or not isinstance(end, int) or start < 0 or end < start:
+        raise ValueError("evaluation profile requires ordered non-negative frame_start and frame_end")
+    state = _load_or_create_state(candidate_manifest_file)
+    state["evaluation_profile"] = profile
+    _write_state(candidate_manifest_file, state)
+    return {"status": "succeeded", "state_file": str(_state_file(candidate_manifest_file)), "profile": profile}
 
 
 def record_candidate_evaluation(
@@ -728,6 +766,29 @@ def _reference_diagnostics(analysis_file: Path) -> tuple[Path | None, Path | Non
     return diagnostics_file, video_file if video_file and video_file.exists() else None
 
 
+def _evaluation_command(profile: dict[str, Any], iteration: int) -> str:
+    backup_dir = Path(profile["backup_root"]) / f"iteration_{iteration:03d}_{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}"
+    lines = [
+        "conda run -n harness python agent/src/main.py candidate-evaluate `",
+        f'  --manifest "{profile["manifest"]}" `',
+        f'  --job "{profile["job"]}" `',
+        f'  --reference "{profile["reference"]}" `',
+        f'  --output-root "{profile["output_root"]}" `',
+        f'  --backup-dir "{backup_dir}" `',
+        f'  --msbuild "{profile["msbuild"]}" `',
+        f'  --renderer "{profile["renderer"]}" `',
+        f'  --configuration "{profile.get("configuration", "Debug")}" `',
+        f'  --platform "{profile.get("platform", "x64")}" `',
+        f'  --width {profile["width"]} --height {profile["height"]} `',
+        f'  --frame-start {profile["frame_start"]} --frame-end {profile["frame_end"]} `',
+        f"  --iteration {iteration}",
+    ]
+    if profile.get("calibrate_progress", True):
+        lines[-1] += " `"
+        lines.append("  --calibrate-progress")
+    return "\n".join(lines)
+
+
 def _refinement_request(packet: dict[str, Any], candidate_dir: Path) -> str:
     allowed = ", ".join(packet["allowed_hypothesis_categories"])
     return f"""Read:
@@ -752,8 +813,21 @@ Do not repeat a rejected category unless you provide new visual evidence.
 Preserve the FX ID, class names, endpoint behavior, and candidate workspace boundary.
 Create or update exactly one iteration_{packet['iteration']:03d}_*.json record with
 `hypothesis_category`, `visual_hypothesis`, `changed_files`, and expected outcome.
-Do not run evaluation; the controller will run it after the edit.
+{_evaluation_instruction(packet)}
 """
+
+
+def _evaluation_instruction(packet: dict[str, Any]) -> str:
+    command = packet.get("evaluation_command")
+    if not isinstance(command, str):
+        return "Do not run evaluation; the controller will run it after the edit."
+    return f"""After editing, ensure OverlayTrTool.exe is closed, then run exactly this evaluation command:
+
+```powershell
+{command}
+```
+
+Read the resulting controller outcome and stop. Do not start another refinement iteration."""
 
 
 def _timestamp() -> str:

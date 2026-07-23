@@ -29,6 +29,7 @@ from .candidate_controller import (
     record_candidate_evaluation,
     restore_candidate_baseline,
     set_candidate_baseline,
+    set_evaluation_profile,
     start_refinement_phase,
 )
 from .sample_workspace import initialize_sample_workspace
@@ -213,6 +214,27 @@ def main(argv: list[str] | None = None) -> int:
                 report_file=Path(args.report).resolve(),
                 source_dir=Path(args.source_dir).resolve() if args.source_dir else None,
             )
+        elif args.command == "candidate-set-evaluation-profile":
+            manifest_file = Path(args.manifest).resolve()
+            result = set_evaluation_profile(
+                candidate_manifest_file=manifest_file,
+                profile={
+                    "manifest": str(manifest_file),
+                    "job": str(Path(args.job).resolve()),
+                    "reference": str(Path(args.reference).resolve()),
+                    "output_root": str(Path(args.output_root).resolve()),
+                    "backup_root": str(Path(args.backup_root).resolve()),
+                    "msbuild": args.msbuild,
+                    "renderer": args.renderer or _default_renderer(workspace_root),
+                    "configuration": args.configuration,
+                    "platform": args.platform,
+                    "width": args.width,
+                    "height": args.height,
+                    "frame_start": args.frame_start,
+                    "frame_end": args.frame_end,
+                    "calibrate_progress": not args.no_calibrate_progress,
+                },
+            )
         elif args.command == "candidate-restore-baseline":
             result = restore_candidate_baseline(Path(args.manifest).resolve())
         elif args.command == "candidate-human-accept":
@@ -245,6 +267,7 @@ def main(argv: list[str] | None = None) -> int:
                 design_file=Path(args.design).resolve(),
                 max_iterations=args.max_iterations,
                 max_rejected=args.max_rejected,
+                evaluate_after_edit=args.evaluate_after_edit,
             )
         elif args.command == "candidate-status":
             result = candidate_status(Path(args.manifest).resolve())
@@ -474,6 +497,29 @@ def build_parser() -> argparse.ArgumentParser:
         help="source directory to snapshot as the selected baseline; defaults to the candidate workspace",
     )
 
+    candidate_evaluation_profile = subparsers.add_parser(
+        "candidate-set-evaluation-profile",
+        help="store the reusable one-shot candidate evaluation command inputs",
+    )
+    candidate_evaluation_profile.add_argument("--manifest", required=True)
+    candidate_evaluation_profile.add_argument("--job", required=True)
+    candidate_evaluation_profile.add_argument("--reference", required=True)
+    candidate_evaluation_profile.add_argument("--output-root", required=True)
+    candidate_evaluation_profile.add_argument("--backup-root", required=True)
+    candidate_evaluation_profile.add_argument("--msbuild", default="msbuild")
+    candidate_evaluation_profile.add_argument("--configuration", default="Debug")
+    candidate_evaluation_profile.add_argument("--platform", default="x64")
+    candidate_evaluation_profile.add_argument("--renderer")
+    candidate_evaluation_profile.add_argument("--width", type=int, required=True)
+    candidate_evaluation_profile.add_argument("--height", type=int, required=True)
+    candidate_evaluation_profile.add_argument("--frame-start", type=int, required=True)
+    candidate_evaluation_profile.add_argument("--frame-end", type=int, required=True)
+    candidate_evaluation_profile.add_argument(
+        "--no-calibrate-progress",
+        action="store_true",
+        help="omit progress calibration from the generated one-shot evaluation command",
+    )
+
     candidate_restore = subparsers.add_parser(
         "candidate-restore-baseline",
         help="restore candidate and registered sources from the selected baseline snapshot",
@@ -518,6 +564,11 @@ def build_parser() -> argparse.ArgumentParser:
     candidate_next.add_argument("--design", required=True)
     candidate_next.add_argument("--max-iterations", type=int, default=20)
     candidate_next.add_argument("--max-rejected", type=int, default=8)
+    candidate_next.add_argument(
+        "--evaluate-after-edit",
+        action="store_true",
+        help="include one configured candidate evaluation command in the generated Codex request",
+    )
 
     candidate_status_cmd = subparsers.add_parser(
         "candidate-status",

@@ -345,45 +345,45 @@ conda run -n harness python agent/src/main.py candidate-start-phase `
   --max-rejected 4
 ```
 
-3. Generate the next packet *after* the phase starts. Read the newly emitted
-`packets/iteration_001_codex_request.md` and give that request to Codex. Codex
-edits only the candidate workspace; it does not run evaluation or edit the
-sample render job:
+3. Store the evaluation profile once for this candidate. It captures the
+deterministic evaluation inputs that otherwise would have to be appended to
+every Codex request:
+
+```powershell
+conda run -n harness python agent/src/main.py candidate-set-evaluation-profile `
+  --manifest "$candidateRoot/candidate_manifest.json" `
+  --job agent/work/samples/<sample-id>/jobs/render_job.json `
+  --reference agent/work/samples/<sample-id>/reference `
+  --output-root "$candidateRoot/evaluations" `
+  --backup-root "$candidateRoot/backups" `
+  --msbuild "C:\Program Files\Microsoft Visual Studio\2022\Professional\MSBuild\Current\Bin\amd64\MSBuild.exe" `
+  --renderer harness/native_renderer/build/x64/Debug/OverlayTrHarnessRenderer.exe `
+  --width 1920 --height 1080 `
+  --frame-start <transition-output-start> `
+  --frame-end <transition-output-end>
+```
+
+4. Generate the next packet *after* the phase starts. The `--evaluate-after-edit`
+option writes exactly one evaluation command into the generated Codex request.
+Give `packets/iteration_001_codex_request.md` to Codex. Codex edits only the
+candidate workspace, runs the supplied evaluation, reads the controller outcome,
+and stops:
 
 ```powershell
 conda run -n harness python agent/src/main.py candidate-next `
   --manifest "$candidateRoot/candidate_manifest.json" `
   --analysis agent/work/samples/<sample-id>/analysis/transition_structure.json `
-  --design agent/work/samples/<sample-id>/design/effect_design.json
-```
-
-4. After Codex writes exactly one `iteration_001_*.json` record and edits the
-candidate, close `OverlayTrTool.exe` and evaluate that iteration. Use a unique
-backup directory and retain automatic progress calibration:
-
-```powershell
-conda run -n harness python agent/src/main.py candidate-evaluate `
-  --manifest "$candidateRoot/candidate_manifest.json" `
-  --job agent/work/samples/<sample-id>/jobs/render_job.json `
-  --reference agent/work/samples/<sample-id>/reference `
-  --output-root "$candidateRoot/evaluations" `
-  --backup-dir "$candidateRoot/backups/evaluation_002" `
-  --msbuild "C:\Program Files\Microsoft Visual Studio\2022\Professional\MSBuild\Current\Bin\amd64\MSBuild.exe" `
-  --renderer harness/native_renderer/build/x64/Debug/OverlayTrHarnessRenderer.exe `
-  --width 1920 --height 1080 `
-  --frame-start <transition-output-start> `
-  --frame-end <transition-output-end> `
-  --iteration 1 `
-  --calibrate-progress
+  --design agent/work/samples/<sample-id>/design/effect_design.json `
+  --evaluate-after-edit
 ```
 
 5. Read the controller outcome and loop:
 
 - `accepted`: the controller snapshots the new baseline automatically. Run
-  `candidate-next`, use its new request, then evaluate the next numbered
-  iteration with another unique backup directory.
+  `candidate-next --evaluate-after-edit`, then use its new request.
 - `rejected` or an unwanted `tradeoff`: restore the selected baseline first,
-  then run `candidate-next` and ask Codex for a different hypothesis:
+  then run `candidate-next --evaluate-after-edit` and ask Codex for a different
+  hypothesis:
 
 ```powershell
 conda run -n harness python agent/src/main.py candidate-restore-baseline `
@@ -412,8 +412,8 @@ sample video
   -> local manual-window preparation and frame-mapping validation
   -> Codex effect design with a new ModelGenerated FX ID
   -> local generation, registration, build, render, and baseline scoring
-  -> bounded Codex shader refinement iterations
-  -> local evaluation and controller decision after every iteration
+  -> bounded Codex shader refinement iterations with one local evaluation each
+  -> controller decision after every iteration
   -> human acceptance or explicit promotion
 ```
 
@@ -427,11 +427,9 @@ Automation requirements that are not complete yet:
 - The controller needs to stop on invalid preparation inputs, repair the
   reference before scoring, and start a new baseline instead of treating the
   correction as a shader iteration.
-- Candidate packets can eventually request an edit-and-evaluate cycle, while
-  retaining bounded iteration and rejection budgets.
-
-Until those items are implemented, use the manual Codex review points in this
-memo and treat the local commands as the deterministic execution boundary.
+- A future controller can invoke Codex itself, rather than requiring the user
+  to submit each generated packet. The current bounded mode still requires the
+  user to provide the generated request to Codex.
 
 ### Correct Renderer Progress Alignment
 
