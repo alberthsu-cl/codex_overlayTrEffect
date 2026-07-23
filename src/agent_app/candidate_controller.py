@@ -869,7 +869,7 @@ def _evaluation_instruction(packet: dict[str, Any]) -> str:
     command = packet.get("evaluation_command")
     if not isinstance(command, str):
         return "Do not run evaluation; the controller will run it after the edit."
-    return f"""After editing, ensure OverlayTrTool.exe is closed, then run exactly this evaluation command:
+    return f"""After editing, run exactly this evaluation command:
 
 ```powershell
 {command}
