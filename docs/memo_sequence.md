@@ -273,14 +273,41 @@ Create an iteration only when all of these are true:
 Examples of shader-specific mismatches are incorrect region count, movement
 direction, displacement magnitude, blur, blend timing, or shader structure.
 
-### Start a Valid Refinement Loop
+### From Baseline Evaluation Through the Refinement Loop
 
-After the initial candidate evaluation is valid, select it as iteration `0`
-and start a bounded phase. Replace `<baseline-run>` with the evaluation folder
-created by the valid baseline command:
+Use this order after `candidate-init`. Set the two transition-output values
+from the prepared reference and verified analysis. For example, the reference
+window for a 60-frame sample might be `14` through `43`.
+
+1. Create the calibrated baseline evaluation. Do not supply `--iteration` for
+   this first run. Use a new backup directory and `--calibrate-progress`:
 
 ```powershell
 $candidateRoot = "agent/work/samples/<sample-id>/candidates/<effect-name>"
+
+conda run -n harness python agent/src/main.py candidate-evaluate `
+  --manifest "$candidateRoot/candidate_manifest.json" `
+  --job agent/work/samples/<sample-id>/jobs/render_job.json `
+  --reference agent/work/samples/<sample-id>/reference `
+  --output-root "$candidateRoot/evaluations" `
+  --backup-dir "$candidateRoot/backups/evaluation_001" `
+  --msbuild "C:\Program Files\Microsoft Visual Studio\2022\Professional\MSBuild\Current\Bin\amd64\MSBuild.exe" `
+  --renderer harness/native_renderer/build/x64/Debug/OverlayTrHarnessRenderer.exe `
+  --width 1920 --height 1080 `
+  --frame-start <transition-output-start> `
+  --frame-end <transition-output-end> `
+  --calibrate-progress
+```
+
+Review the emitted comparison video. If the reference and candidate timing is
+still visibly misaligned, correct calibration or preparation before starting a
+shader iteration.
+
+2. Start a bounded phase from this valid baseline. Replace `<baseline-run>`
+with the new evaluation folder. This creates baseline iteration `0` and its
+source snapshot:
+
+```powershell
 $baselineReport = "$candidateRoot/evaluations/<baseline-run>/reports/candidate_iteration_report.json"
 
 conda run -n harness python agent/src/main.py candidate-start-phase `
@@ -288,24 +315,25 @@ conda run -n harness python agent/src/main.py candidate-start-phase `
   --name shader_refinement `
   --baseline-iteration 0 `
   --report $baselineReport `
-  --max-iterations 5 `
-  --max-rejected 3
+  --max-iterations 8 `
+  --max-rejected 4
 ```
 
-Prepare one bounded iteration request:
+3. Generate the next packet *after* the phase starts. Read the newly emitted
+`packets/iteration_001_codex_request.md` and give that request to Codex. Codex
+edits only the candidate workspace; it does not run evaluation or edit the
+sample render job:
 
 ```powershell
 conda run -n harness python agent/src/main.py candidate-next `
   --manifest "$candidateRoot/candidate_manifest.json" `
   --analysis agent/work/samples/<sample-id>/analysis/transition_structure.json `
-  --design agent/work/samples/<sample-id>/design/effect_design.json `
-  --max-iterations 5 `
-  --max-rejected 3
+  --design agent/work/samples/<sample-id>/design/effect_design.json
 ```
 
-Read the emitted `packets/iteration_001_codex_request.md`, ask Codex to edit
-only the candidate workspace, then evaluate that exact iteration. Use a unique
-backup directory each time and the corrected scoring window:
+4. After Codex writes exactly one `iteration_001_*.json` record and edits the
+candidate, close `OverlayTrTool.exe` and evaluate that iteration. Use a unique
+backup directory and retain automatic progress calibration:
 
 ```powershell
 conda run -n harness python agent/src/main.py candidate-evaluate `
@@ -313,27 +341,35 @@ conda run -n harness python agent/src/main.py candidate-evaluate `
   --job agent/work/samples/<sample-id>/jobs/render_job.json `
   --reference agent/work/samples/<sample-id>/reference `
   --output-root "$candidateRoot/evaluations" `
-  --backup-dir "$candidateRoot/backups/evaluation_003" `
+  --backup-dir "$candidateRoot/backups/evaluation_002" `
   --msbuild "C:\Program Files\Microsoft Visual Studio\2022\Professional\MSBuild\Current\Bin\amd64\MSBuild.exe" `
   --renderer harness/native_renderer/build/x64/Debug/OverlayTrHarnessRenderer.exe `
   --width 1920 --height 1080 `
-  --frame-start 0 --frame-end <reference-frame-count-minus-one> `
-  --iteration 1
+  --frame-start <transition-output-start> `
+  --frame-end <transition-output-end> `
+  --iteration 1 `
+  --calibrate-progress
 ```
 
-For an `accepted` outcome, the controller snapshots the new baseline
-automatically. For a `rejected` or `tradeoff` outcome, restore the selected
-baseline before asking Codex for another hypothesis:
+5. Read the controller outcome and loop:
+
+- `accepted`: the controller snapshots the new baseline automatically. Run
+  `candidate-next`, use its new request, then evaluate the next numbered
+  iteration with another unique backup directory.
+- `rejected` or an unwanted `tradeoff`: restore the selected baseline first,
+  then run `candidate-next` and ask Codex for a different hypothesis:
 
 ```powershell
 conda run -n harness python agent/src/main.py candidate-restore-baseline `
   --manifest "$candidateRoot/candidate_manifest.json"
 ```
 
-Then run `candidate-next` again. Do not create a new FX ID or register again
-for ordinary shader iterations. If visual review accepts the current baseline
-despite imperfect diagnostics, record `candidate-human-accept` and close the
-phase instead of continuing iterations.
+- visually acceptable but not diagnostically accepted: use
+  `candidate-human-accept` to record the decision and close the active phase.
+
+Do not create another FX ID or register again during ordinary shader
+iterations. The same generated FX ID is refined until the phase is accepted,
+closed by human review, or reaches its configured budget.
 
 ## Automation Target
 
