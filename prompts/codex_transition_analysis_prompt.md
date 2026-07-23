@@ -37,6 +37,14 @@ Analysis goals:
 - provide a normalized frame/progress mapping for the transition window
 - suggest whether the result looks like an existing effect family or likely needs a new implementation
 
+Analysis flow:
+1. Review the diagnostics and the video as supporting evidence, not as the final answer.
+2. Classify the visible geometry using general structural categories such as quadrant split, horizontal band split, vertical band split, masked split, dissolve, uv displacement, or other.
+3. Identify the stable source A boundary, transition window, and stable source B boundary.
+4. Reconcile any mismatch between the diagnostics and direct visual inspection.
+5. Decide whether the window or boundaries need review or repair before downstream use.
+6. Emit the final JSON artifact only after the structure and timing are internally consistent.
+
 Important constraints:
 - the sample video is the primary source of truth
 - treat reference motion diagnostics as confidence-qualified supporting
@@ -52,7 +60,11 @@ What to extract:
 - video metadata when available: frame count, fps, width, height
 - a short transition style label
 - a one-sentence summary of the visible transformation
+- a structural classification and region count when the effect is segmented
+- the main motion geometry, such as horizontal bands, vertical bands, true quadrants, or masked regions
 - start and end frame of the main transition window
+- stable source-A and source-B boundary frames when they can be resolved
+- a window review status such as verified, needs_review, or repaired
 - confidence for the overall classification
 - dominant signals such as dissolve, morph, masked blend, RGB split, blur, displacement, scene continuity, camera continuity, or lighting continuity
 - frame-by-frame normalized progress values across the transition window
@@ -86,6 +98,11 @@ Decision rules:
 - Set `implementation_status` to `unsupported` when the current grammar cannot
   represent the observed behavior, and use `review_required` when feasibility
   is uncertain.
+- If the structure is ambiguous, prefer a lower-confidence general category over
+  a sample-specific label like "4 quadrant" unless the frame evidence really
+  shows independent quadrant motion.
+- If the boundaries are not cleanly visible, record that in the window review
+  status instead of overfitting the timing.
 
 Use the schema supplied alongside this prompt. The final response must satisfy that schema exactly.
 ```

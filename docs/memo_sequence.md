@@ -81,14 +81,23 @@ Use:
 - `agent/work/samples/<sample-id>/diagnostics/reference_motion_diagnostics.json`
 - `agent/work/samples/<sample-id>/diagnostics/reference_motion_diagnostics.mp4`
 
+The analysis pass should be a small structured loop:
+
+1. classify the visible transition geometry;
+2. identify stable source A, transition, and stable source B boundaries;
+3. reconcile any mismatch between diagnostics and direct visual inspection;
+4. assign a confidence level and a window review status;
+5. emit the final JSON only after the structure and timing are consistent.
+
 Save the returned JSON as:
 
 ```text
 agent/work/samples/<sample-id>/analysis/transition_structure.json
 ```
 
-The analysis should identify the stable A/B source boundaries and the
-transition window.
+The analysis should identify the stable A/B source boundaries, the transition
+window, and the structural geometry of the transition so step 5 can prepare
+accurate source repetitions.
 
 ## 5. Prepare Source A/B Frames
 

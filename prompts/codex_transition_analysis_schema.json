@@ -68,6 +68,32 @@
           "type": "string",
           "description": "Short label for the visible transition family."
         },
+        "structure_type": {
+          "type": "string",
+          "description": "General structural category such as quadrant split, horizontal band split, vertical band split, masked split, dissolve, uv displacement, or other."
+        },
+        "region_count": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Approximate number of independently moving regions when the transition is segmented."
+        },
+        "motion_axes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "High-level motion axes or geometry descriptors such as horizontal, vertical, opposed, or radial."
+        },
+        "split_geometry": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Short description of the split layout, such as 2x2 quadrants or horizontal bands."
+        },
         "summary": {
           "type": "string",
           "description": "One-sentence description of the visible source-to-target transformation."
@@ -84,6 +110,35 @@
           "type": "number",
           "minimum": 0,
           "maximum": 1
+        },
+        "stable_source_a_end_frame": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "stable_source_b_start_frame": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "window_review_status": {
+          "type": "string",
+          "enum": [
+            "verified",
+            "needs_review",
+            "repaired"
+          ],
+          "description": "Whether the boundary selection is ready for downstream use or should be revisited."
+        },
+        "window_review_notes": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       }
     },
