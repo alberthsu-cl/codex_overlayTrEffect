@@ -20,6 +20,7 @@ from agent_app.workflow import (
     build_report,
     prepare_reference,
     prepare_sources,
+    resolve_source_boundaries,
     retrieve_effect,
     score_candidate,
 )
@@ -606,6 +607,63 @@ class WorkflowTests(unittest.TestCase):
                 width=16,
                 height=16,
             )
+
+    def test_prepare_sources_defaults_to_video_endpoints(self) -> None:
+        root = Path(__file__).resolve().parents[1] / "work" / f"endpoint_sources_{uuid.uuid4().hex}"
+        root.mkdir(parents=True)
+        source_video = root / "sample.mp4"
+        output_root = root / "sources"
+        try:
+            source_video.write_bytes(b"video")
+
+            def extract(_ffmpeg: str, _video: Path, frame_index: int, output_file: Path, _width: int, _height: int) -> None:
+                output_file.write_bytes(str(frame_index).encode("ascii"))
+
+            with patch("agent_app.workflow._probe_video_frame_count", return_value=114):
+                with patch("agent_app.workflow._extract_single_frame", side_effect=extract):
+                    result = prepare_sources(
+                        source_video=source_video,
+                        output_root=output_root,
+                        start_frame=None,
+                        end_frame=None,
+                        frame_count=2,
+                        width=16,
+                        height=16,
+                        ffmpeg_path="ffmpeg.exe",
+                    )
+
+            self.assertEqual(result["source_a_frame"], 0)
+            self.assertEqual(result["source_b_frame"], 113)
+            self.assertEqual(result["selection"]["mode"], "video_endpoints")
+            self.assertEqual((output_root / "source_a" / "frame_0000.png").read_bytes(), b"0")
+            self.assertEqual((output_root / "source_b" / "frame_0000.png").read_bytes(), b"113")
+        finally:
+            for path in sorted(root.rglob("*"), reverse=True):
+                if path.is_file():
+                    path.unlink()
+                elif path.is_dir():
+                    path.rmdir()
+            root.rmdir()
+
+    def test_resolve_source_boundaries_maps_prepared_reference_to_original_video(self) -> None:
+        analysis = {
+            "transition": {
+                "stable_source_a_end_frame": 13,
+                "stable_source_b_start_frame": 45,
+            }
+        }
+        reference_manifest = {
+            "frame_progress_mapping": [
+                {"output_frame": 13, "normalized_clip_source_frame": 63},
+                {"output_frame": 45, "normalized_clip_source_frame": 95},
+            ]
+        }
+        with patch("agent_app.workflow.load_json", side_effect=[analysis, reference_manifest]):
+            result = resolve_source_boundaries(Path("analysis.json"), Path("reference_transition_manifest.json"))
+
+        self.assertEqual(result["mode"], "prepared_reference_mapping")
+        self.assertEqual(result["source_a_frame"], 63)
+        self.assertEqual(result["source_b_frame"], 95)
 
     def test_build_render_job_uses_existing_effect_design(self) -> None:
         analysis = {

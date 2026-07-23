@@ -53,24 +53,55 @@ def prepare_reference(
 def prepare_sources(
     source_video: Path,
     output_root: Path,
-    start_frame: int,
-    end_frame: int,
+    start_frame: int | None,
+    end_frame: int | None,
     frame_count: int,
     width: int,
     height: int,
     ffmpeg_path: str | None = None,
+    analysis_file: Path | None = None,
+    reference_manifest_file: Path | None = None,
 ) -> dict[str, Any]:
-    if start_frame < 0 or end_frame < 0 or end_frame < start_frame:
+    if (
+        analysis_file is None
+        and reference_manifest_file is None
+        and start_frame is not None
+        and end_frame is not None
+        and (start_frame < 0 or end_frame < 0 or end_frame < start_frame)
+    ):
         raise ValueError("source frame boundaries must be non-negative and ordered")
-    if frame_count < 2:
-        raise ValueError("frame_count must be at least 2")
     if not source_video.exists():
         raise FileNotFoundError(f"source video does not exist: {source_video}")
-
     ffmpeg_executable = ffmpeg_path or shutil.which("ffmpeg")
     if not ffmpeg_executable:
         raise RuntimeError("ffmpeg is required for source preparation but was not found on PATH")
 
+    selection: dict[str, Any]
+    if analysis_file is not None or reference_manifest_file is not None:
+        if analysis_file is None or reference_manifest_file is None:
+            raise ValueError("analysis and reference manifest are both required for mapped source boundaries")
+        if start_frame is not None or end_frame is not None:
+            raise ValueError("mapped source boundaries cannot be combined with --start-frame or --end-frame")
+        selection = resolve_source_boundaries(analysis_file, reference_manifest_file)
+        start_frame = int(selection["source_a_frame"])
+        end_frame = int(selection["source_b_frame"])
+    elif start_frame is None and end_frame is None:
+        source_video_frame_count = _probe_video_frame_count(ffmpeg_executable, source_video)
+        start_frame = 0
+        end_frame = source_video_frame_count - 1
+        selection = {
+            "mode": "video_endpoints",
+            "source_video_frame_count": source_video_frame_count,
+        }
+    else:
+        if start_frame is None or end_frame is None:
+            raise ValueError("original-video source selection requires both --start-frame and --end-frame")
+        selection = {"mode": "original_video_frames"}
+
+    if start_frame < 0 or end_frame < 0 or end_frame < start_frame:
+        raise ValueError("source frame boundaries must be non-negative and ordered")
+    if frame_count < 2:
+        raise ValueError("frame_count must be at least 2")
     output_root.mkdir(parents=True, exist_ok=True)
     source_a_dir = output_root / "source_a"
     source_b_dir = output_root / "source_b"
@@ -104,6 +135,7 @@ def prepare_sources(
         "source_a": str(source_a_dir),
         "source_b": str(source_b_dir),
         "ffmpeg": ffmpeg_executable,
+        "selection": selection,
     }
     manifest_file = output_root / "source_pair_manifest.json"
     write_json(manifest_file, manifest)
@@ -118,6 +150,46 @@ def prepare_sources(
         "frame_count": frame_count,
         "source_a_frame": start_frame,
         "source_b_frame": end_frame,
+        "selection": selection,
+    }
+
+
+def resolve_source_boundaries(analysis_file: Path, reference_manifest_file: Path) -> dict[str, Any]:
+    """Map prepared-reference stable boundaries back to original source-video frames."""
+    analysis = load_json(analysis_file)
+    transition = analysis.get("transition")
+    if not isinstance(transition, dict):
+        raise ValueError("analysis artifact is missing transition")
+    source_a_reference_frame = transition.get("stable_source_a_end_frame")
+    source_b_reference_frame = transition.get("stable_source_b_start_frame")
+    if not isinstance(source_a_reference_frame, int) or not isinstance(source_b_reference_frame, int):
+        raise ValueError("analysis must provide stable_source_a_end_frame and stable_source_b_start_frame")
+
+    reference_manifest = load_json(reference_manifest_file)
+    mapping = reference_manifest.get("frame_progress_mapping")
+    if not isinstance(mapping, list):
+        raise ValueError("reference manifest is missing frame_progress_mapping")
+    source_by_output_frame = {
+        item.get("output_frame"): item.get("normalized_clip_source_frame")
+        for item in mapping
+        if isinstance(item, dict)
+        and isinstance(item.get("output_frame"), int)
+        and isinstance(item.get("normalized_clip_source_frame"), int)
+    }
+    source_a_frame = source_by_output_frame.get(source_a_reference_frame)
+    source_b_frame = source_by_output_frame.get(source_b_reference_frame)
+    if not isinstance(source_a_frame, int) or not isinstance(source_b_frame, int):
+        raise ValueError("analysis stable source boundaries are outside the prepared-reference mapping")
+    if source_b_frame < source_a_frame:
+        raise ValueError("mapped source boundaries are reversed")
+    return {
+        "mode": "prepared_reference_mapping",
+        "analysis_file": str(analysis_file),
+        "reference_manifest_file": str(reference_manifest_file),
+        "source_a_reference_frame": source_a_reference_frame,
+        "source_b_reference_frame": source_b_reference_frame,
+        "source_a_frame": source_a_frame,
+        "source_b_frame": source_b_frame,
     }
 
 
@@ -1206,6 +1278,42 @@ def _extract_single_frame(
         )
     if not output_file.exists():
         raise RuntimeError(f"ffmpeg produced no frame for source index {frame_index}")
+
+
+def _probe_video_frame_count(ffmpeg_executable: str, source_video: Path) -> int:
+    ffprobe_executable = Path(ffmpeg_executable).with_name("ffprobe.exe")
+    if not ffprobe_executable.exists():
+        ffprobe_executable = Path(shutil.which("ffprobe") or "")
+    if not ffprobe_executable.exists():
+        raise RuntimeError("ffprobe is required to select the final source-video frame")
+    completed = subprocess.run(
+        [
+            str(ffprobe_executable),
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-count_frames",
+            "-show_entries",
+            "stream=nb_read_frames,nb_frames",
+            "-of",
+            "default=nokey=1:noprint_wrappers=1",
+            str(source_video),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(f"ffprobe failed to count source frames: {completed.stderr.strip()}")
+    for value in completed.stdout.splitlines():
+        try:
+            frame_count = int(value.strip())
+        except ValueError:
+            continue
+        if frame_count > 0:
+            return frame_count
+    raise RuntimeError("ffprobe did not return a positive source-video frame count")
 
 
 def _clear_png_frames(directory: Path) -> None:

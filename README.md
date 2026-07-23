@@ -104,8 +104,6 @@ python agent/src/main.py prepare `
 python agent/src/main.py prepare-sources `
   --source-video harness/examples/sample_glitch.mp4 `
   --output-root agent/work/glitch_sources `
-  --start-frame 0 `
-  --end-frame 29 `
   --frame-count 30
 
 python agent/src/main.py retrieve `
@@ -154,12 +152,10 @@ conda run -n harness python agent/src/main.py prepare `
   --output-dir agent/work/samples/example_20260721/reference `
   --target-frame-count 60
 
-# After Codex has identified the stable A/B source boundaries.
+# Default endpoint mode: first frame is A and final decoded frame is B.
 conda run -n harness python agent/src/main.py prepare-sources `
   --source-video "D:\\input\\example.mp4" `
   --output-root agent/work/samples/example_20260721/sources `
-  --start-frame <A-frame> `
-  --end-frame <B-frame> `
   --frame-count <reference-manifest-frame-count>
 ```
 
@@ -221,9 +217,11 @@ The native renderer is optional for the first setup check. Without a renderer,
 produces candidate PNG frames. Non-BMP preparation and scoring require
 `ffmpeg`.
 
-`prepare-sources` extracts the A and B stills at the boundaries supplied by the
-analysis artifact, repeats them into equal-length frame sequences, and writes
-`source_pair_manifest.json`. It does not guess transition boundaries itself.
+`prepare-sources` defaults to original-video endpoints: frame `0` for A and
+the final decoded frame for B. For externally supplied videos, use
+`--analysis --reference-manifest` to map prepared-reference stable A/B
+boundaries to original-video frame indices. The raw `--start-frame/--end-frame`
+form is only for explicitly original-video frame indices.
 
 `retrieve` queries the existing `harness` effect catalog using the analysis
 artifact's recommended family. Retrieval reports the selected built-in effect,

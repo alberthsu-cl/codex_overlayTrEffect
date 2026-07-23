@@ -101,17 +101,21 @@ accurate source repetitions.
 
 ## 5. Prepare Source A/B Frames
 
-Use stable source-frame boundaries found in the analysis. The command repeats
-the selected A and B frames to create equal-length source sequences.
+For generated two-still sample videos, use the default endpoint mode. It
+extracts original video frame `0` as A and the final decoded frame as B, then
+repeats those stills into equal-length source sequences.
 
 ```powershell
 conda run -n harness python agent/src/main.py prepare-sources `
   --source-video "D:\input\sample.mp4" `
   --output-root agent/work/samples/<sample-id>/sources `
-  --start-frame <stable-A-frame> `
-  --end-frame <stable-B-frame> `
   --frame-count <reference-manifest-frame-count>
 ```
+
+For an external, trimmed, or non-endpoint-stable video, use `--analysis` and
+`--reference-manifest` to map prepared-reference stable boundaries back to
+original-video frames. Use `--start-frame` and `--end-frame` only when their
+values are known original source-video indices.
 
 ## 6. Ask Codex for the Effect Design
 

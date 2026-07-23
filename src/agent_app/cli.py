@@ -73,6 +73,10 @@ def main(argv: list[str] | None = None) -> int:
                 width=args.width,
                 height=args.height,
                 ffmpeg_path=args.ffmpeg,
+                analysis_file=Path(args.analysis).resolve() if args.analysis else None,
+                reference_manifest_file=Path(args.reference_manifest).resolve()
+                if args.reference_manifest
+                else None,
             )
         elif args.command == "reference-diagnostics":
             result = analyze_reference_diagnostics(
@@ -336,12 +340,28 @@ def build_parser() -> argparse.ArgumentParser:
 
     prepare_sources_cmd = subparsers.add_parser(
         "prepare-sources",
-        help="extract source A/B frames from the analysis boundaries and repeat them",
+        help="extract stable source A/B frames and repeat them",
     )
     prepare_sources_cmd.add_argument("--source-video", required=True)
     prepare_sources_cmd.add_argument("--output-root", required=True)
-    prepare_sources_cmd.add_argument("--start-frame", type=int, required=True)
-    prepare_sources_cmd.add_argument("--end-frame", type=int, required=True)
+    prepare_sources_cmd.add_argument(
+        "--start-frame",
+        type=int,
+        help="stable source-A frame in the original source video; requires --end-frame",
+    )
+    prepare_sources_cmd.add_argument(
+        "--end-frame",
+        type=int,
+        help="stable source-B frame in the original source video; requires --start-frame",
+    )
+    prepare_sources_cmd.add_argument(
+        "--analysis",
+        help="transition_structure.json with prepared-reference stable A/B boundary frames",
+    )
+    prepare_sources_cmd.add_argument(
+        "--reference-manifest",
+        help="prepared reference_transition_manifest.json used to map analysis frames to original video frames",
+    )
     prepare_sources_cmd.add_argument("--frame-count", type=int, default=30)
     prepare_sources_cmd.add_argument("--width", type=int, default=1920)
     prepare_sources_cmd.add_argument("--height", type=int, default=1080)
