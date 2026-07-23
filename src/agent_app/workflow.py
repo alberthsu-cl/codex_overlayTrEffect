@@ -121,6 +121,51 @@ def prepare_sources(
     }
 
 
+def analyze_reference_diagnostics(
+    workspace_root: Path,
+    reference: Path,
+    output_dir: Path,
+    width: int,
+    height: int,
+    frame_start: int = 0,
+    frame_end: int | None = None,
+    ffmpeg_path: str | None = None,
+) -> dict[str, Any]:
+    """Create deterministic reference-only motion evidence for Codex review."""
+    modules = load_harness_modules(workspace_root)
+    frames_dir = output_dir / "reference_motion_frames"
+    result = modules["analyze_reference_motion"](
+        reference=reference,
+        output_dir=frames_dir,
+        width=width,
+        height=height,
+        frame_start=frame_start,
+        frame_end=frame_end,
+        ffmpeg_path=ffmpeg_path,
+    )
+    reference_manifest = reference / "reference_transition_manifest.json"
+    fps = 30
+    if reference_manifest.exists():
+        manifest = load_json(reference_manifest)
+        if isinstance(manifest.get("fps"), int) and manifest["fps"] > 0:
+            fps = manifest["fps"]
+    ffmpeg_executable = ffmpeg_path or shutil.which("ffmpeg")
+    video = (
+        _encode_png_sequence(
+            frames_dir,
+            fps=fps,
+            ffmpeg_executable=ffmpeg_executable,
+            output_file=output_dir / "reference_motion_diagnostics.mp4",
+        )
+        if ffmpeg_executable
+        else {"status": "skipped", "message": "ffmpeg was not found; PNG diagnostics remain available"}
+    )
+    result["video"] = video
+    output_file = output_dir / "reference_motion_diagnostics.json"
+    write_json(output_file, result)
+    return {"status": "succeeded", "diagnostics": result, "output_file": str(output_file)}
+
+
 def retrieve_effect(
     workspace_root: Path,
     analysis_file: Path,

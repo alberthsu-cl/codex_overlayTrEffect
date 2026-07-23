@@ -9,6 +9,7 @@ from .workflow import (
     build_report,
     benchmark_effects,
     evaluate_candidate,
+    analyze_reference_diagnostics,
     prepare_reference,
     prepare_sources,
     retrieve_effect,
@@ -69,6 +70,17 @@ def main(argv: list[str] | None = None) -> int:
                 frame_count=args.frame_count,
                 width=args.width,
                 height=args.height,
+                ffmpeg_path=args.ffmpeg,
+            )
+        elif args.command == "reference-diagnostics":
+            result = analyze_reference_diagnostics(
+                workspace_root=workspace_root,
+                reference=Path(args.reference).resolve(),
+                output_dir=Path(args.output_dir).resolve(),
+                width=args.width,
+                height=args.height,
+                frame_start=args.frame_start,
+                frame_end=args.frame_end,
                 ffmpeg_path=args.ffmpeg,
             )
         elif args.command == "retrieve":
@@ -302,6 +314,18 @@ def build_parser() -> argparse.ArgumentParser:
     prepare_sources_cmd.add_argument("--width", type=int, default=1920)
     prepare_sources_cmd.add_argument("--height", type=int, default=1080)
     prepare_sources_cmd.add_argument("--ffmpeg")
+
+    reference_diagnostics = subparsers.add_parser(
+        "reference-diagnostics",
+        help="analyze prepared reference frames into flow, dynamic-region, and confidence evidence",
+    )
+    reference_diagnostics.add_argument("--reference", required=True)
+    reference_diagnostics.add_argument("--output-dir", required=True)
+    reference_diagnostics.add_argument("--width", type=int, default=1920)
+    reference_diagnostics.add_argument("--height", type=int, default=1080)
+    reference_diagnostics.add_argument("--frame-start", type=int, default=0)
+    reference_diagnostics.add_argument("--frame-end", type=int)
+    reference_diagnostics.add_argument("--ffmpeg")
 
     retrieve_cmd = subparsers.add_parser(
         "retrieve",

@@ -269,6 +269,13 @@ class WorkflowTests(unittest.TestCase):
             )
             analysis.write_text("{}", encoding="utf-8")
             design.write_text("{}", encoding="utf-8")
+            diagnostics_dir = root / "diagnostics"
+            diagnostics_dir.mkdir()
+            diagnostic_video = diagnostics_dir / "reference_motion_diagnostics.mp4"
+            diagnostic_video.write_bytes(b"video")
+            (diagnostics_dir / "reference_motion_diagnostics.json").write_text(
+                json.dumps({"video": {"file": str(diagnostic_video)}}), encoding="utf-8"
+            )
             self._write_controller_report(report, mse=10.0, ssim=0.9, motion_similarity=0.7)
             state = set_candidate_baseline(manifest, iteration=1, report_file=report)
             self.assertEqual(state["status"], "succeeded")
@@ -290,6 +297,9 @@ class WorkflowTests(unittest.TestCase):
             )
             self.assertEqual(packet["iteration"], 2)
             self.assertTrue(Path(packet["prompt_file"]).exists())
+            packet_data = json.loads(Path(packet["packet_file"]).read_text(encoding="utf-8"))
+            self.assertEqual(packet_data["reference_diagnostics_file"], str(diagnostics_dir / "reference_motion_diagnostics.json"))
+            self.assertEqual(packet_data["reference_diagnostics_video"], str(diagnostic_video))
 
             iteration_file = candidate_dir / "iteration_002_regions.json"
             iteration_file.write_text(

@@ -14,6 +14,7 @@ SAMPLE_DIRECTORIES = (
     "sources",
     "analysis",
     "design",
+    "diagnostics",
     "jobs",
     "effects",
     "candidates",

@@ -26,6 +26,7 @@ agent/work/samples/<sample-id>/
   sources/
   analysis/
   design/
+  diagnostics/
   jobs/
   effects/
   candidates/
@@ -49,7 +50,27 @@ conda run -n harness python agent/src/main.py prepare `
   --target-frame-count 60
 ```
 
-## 3. Ask Codex to Analyze the Sample
+## 3. Generate Reference Motion Evidence
+
+Create a deterministic, confidence-qualified flow/region diagnostic before
+asking Codex to analyze the sample. It is evidence only; it does not replace
+Codex visual inspection or decide the transition window.
+
+```powershell
+conda run -n harness python agent/src/main.py reference-diagnostics `
+  --reference agent/work/samples/<sample-id>/reference `
+  --output-dir agent/work/samples/<sample-id>/diagnostics
+```
+
+This produces:
+
+```text
+diagnostics/reference_motion_diagnostics.json
+diagnostics/reference_motion_diagnostics.mp4
+diagnostics/reference_motion_frames/
+```
+
+## 4. Ask Codex to Analyze the Sample
 
 Use:
 
@@ -57,6 +78,8 @@ Use:
 - `agent/prompts/codex_transition_analysis_schema.json`
 - the original video
 - `agent/work/samples/<sample-id>/reference`
+- `agent/work/samples/<sample-id>/diagnostics/reference_motion_diagnostics.json`
+- `agent/work/samples/<sample-id>/diagnostics/reference_motion_diagnostics.mp4`
 
 Save the returned JSON as:
 
@@ -67,7 +90,7 @@ agent/work/samples/<sample-id>/analysis/transition_structure.json
 The analysis should identify the stable A/B source boundaries and the
 transition window.
 
-## 4. Prepare Source A/B Frames
+## 5. Prepare Source A/B Frames
 
 Use stable source-frame boundaries found in the analysis. The command repeats
 the selected A and B frames to create equal-length source sequences.
@@ -81,7 +104,7 @@ conda run -n harness python agent/src/main.py prepare-sources `
   --frame-count <reference-manifest-frame-count>
 ```
 
-## 5. Ask Codex for the Effect Design
+## 6. Ask Codex for the Effect Design
 
 Use:
 
@@ -110,7 +133,7 @@ Save the returned JSON as:
 agent/work/samples/<sample-id>/design/effect_design.json
 ```
 
-## 6. Build a Render Job
+## 7. Build a Render Job
 
 Create the job from the analysis, design, source A/B frames, and prepared
 reference frames:
@@ -125,7 +148,7 @@ conda run -n harness python agent/src/main.py build-job `
   --output agent/work/samples/<sample-id>/jobs/render_job.json
 ```
 
-## 7. Generate, Register, and Refine When Needed
+## 8. Generate, Register, and Refine When Needed
 
 The FX ID is global to `OverlayTrEngine`, so it must be unique across all
 sample workspaces, for example `ModelGenerated\\SeamlessSliding_03`.
@@ -207,7 +230,10 @@ conda run -n harness python agent/src/main.py candidate-evaluate `
   --backup-dir agent/work/samples/$sampleId/candidates/$effectName/backups/evaluation_001 `
   --msbuild "C:\Program Files\Microsoft Visual Studio\2022\Professional\MSBuild\Current\Bin\amd64\MSBuild.exe" `
   --renderer harness/native_renderer/build/x64/Debug/OverlayTrHarnessRenderer.exe `
-  --width 1920 --height 1080
+  --width 1920 --height 1080 `
+  --frame-start <transition-output-start> `
+  --frame-end <transition-output-end> `
+  --calibrate-progress
 ```
 
 The first evaluation stages the candidate into the registered target, builds
@@ -215,7 +241,7 @@ the plugin, renders it, and creates review MP4s. Keep packets, backups, and
 evaluations inside this candidate directory. Do not add `--restore` if the
 result should remain available in `OverlayTrTool` for visual inspection.
 
-## 8. Review and Decide
+## 9. Review and Decide
 
 Review these generated artifacts after each candidate evaluation:
 

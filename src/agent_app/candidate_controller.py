@@ -278,6 +278,7 @@ def build_next_iteration_packet(
     latest_video = _latest_video(candidate_dir / "evaluations")
     latest_comparison = _latest_comparison_video(candidate_dir / "evaluations")
     latest_motion = _latest_motion_video(candidate_dir / "evaluations")
+    reference_diagnostics, reference_diagnostic_video = _reference_diagnostics(analysis_file)
     packet_file = candidate_dir / "packets" / f"iteration_{next_iteration:03d}_packet.json"
     prompt_file = candidate_dir / "packets" / f"iteration_{next_iteration:03d}_codex_request.md"
     candidate = load_json(candidate_manifest_file)
@@ -295,6 +296,8 @@ def build_next_iteration_packet(
         "latest_candidate_video": str(latest_video) if latest_video else None,
         "latest_comparison_video": str(latest_comparison) if latest_comparison else None,
         "latest_motion_video": str(latest_motion) if latest_motion else None,
+        "reference_diagnostics_file": str(reference_diagnostics) if reference_diagnostics else None,
+        "reference_diagnostics_video": str(reference_diagnostic_video) if reference_diagnostic_video else None,
         "baseline": state["baseline"],
         "history": state["history"],
         "shortlist": state["shortlist"],
@@ -711,6 +714,20 @@ def _latest_motion_video(evaluations_dir: Path) -> Path | None:
     return max(videos, key=lambda path: path.stat().st_mtime) if videos else None
 
 
+def _reference_diagnostics(analysis_file: Path) -> tuple[Path | None, Path | None]:
+    sample_dir = analysis_file.parent.parent
+    diagnostics_file = sample_dir / "diagnostics" / "reference_motion_diagnostics.json"
+    if not diagnostics_file.exists():
+        return None, None
+    try:
+        diagnostics = load_json(diagnostics_file)
+    except (OSError, ValueError):
+        return diagnostics_file, None
+    video = diagnostics.get("video")
+    video_file = Path(video["file"]) if isinstance(video, dict) and isinstance(video.get("file"), str) else None
+    return diagnostics_file, video_file if video_file and video_file.exists() else None
+
+
 def _refinement_request(packet: dict[str, Any], candidate_dir: Path) -> str:
     allowed = ", ".join(packet["allowed_hypothesis_categories"])
     return f"""Read:
@@ -722,6 +739,8 @@ def _refinement_request(packet: dict[str, Any], candidate_dir: Path) -> str:
 - {packet['latest_candidate_video'] or 'no previous candidate video'}
 - {packet['latest_comparison_video'] or 'no previous comparison video'}
 - {packet['latest_motion_video'] or 'no previous motion diagnostic video'}
+- {packet['reference_diagnostics_file'] or 'no reference motion diagnostics'}
+- {packet['reference_diagnostics_video'] or 'no reference motion diagnostic video'}
 
 Edit only:
 {candidate_dir}

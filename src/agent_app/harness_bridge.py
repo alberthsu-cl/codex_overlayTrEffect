@@ -13,7 +13,12 @@ def load_harness_modules(workspace_root: Path):
     if harness_src_text not in sys.path:
         sys.path.insert(0, harness_src_text)
 
-    from overlay_harness.evaluator import create_motion_visualizations, score_frame_sequences, score_motion
+    from overlay_harness.evaluator import (
+        analyze_reference_motion,
+        create_motion_visualizations,
+        score_frame_sequences,
+        score_motion,
+    )
     from overlay_harness.effect_catalog import build_effect_catalog
     from overlay_harness.effect_catalog import select_effect_candidate
     from overlay_harness.models import load_render_job
@@ -29,6 +34,7 @@ def load_harness_modules(workspace_root: Path):
         "score_frame_sequences": score_frame_sequences,
         "score_motion": score_motion,
         "create_motion_visualizations": create_motion_visualizations,
+        "analyze_reference_motion": analyze_reference_motion,
         "build_effect_catalog": build_effect_catalog,
         "select_effect_candidate": select_effect_candidate,
     }

@@ -21,6 +21,8 @@ Analyze the provided sample transition video and produce a single JSON artifact 
 Primary input:
 - a local sample transition video path such as `D:\AI_Harness\sample.mp4`
 - optional prepared reference frames if they already exist
+- optional `reference_motion_diagnostics.json` and its diagnostic MP4, created
+  locally from the prepared reference frames
 
 Output rules:
 - write exactly one JSON object that conforms to the supplied schema
@@ -37,6 +39,10 @@ Analysis goals:
 
 Important constraints:
 - the sample video is the primary source of truth
+- treat reference motion diagnostics as confidence-qualified supporting
+  evidence, not as an effect classification or a source-boundary decision
+- use direct inspection to resolve conflicts between the video and a heuristic;
+  record that conflict in `limitations`
 - do not fall back to a deterministic local analyzer as the main answer
 - do not invent details that are not visible
 - if the video cannot be inspected directly in this environment, report that limitation in the JSON instead of pretending confidence
@@ -59,6 +65,11 @@ What to extract:
   - whether a new effect is likely needed
   - whether the current constrained grammar can support implementation
 - implementation notes only at a high level
+
+When reference motion diagnostics are provided, use them to check region count,
+per-region motion direction, approximate motion strength, onset/peak/settling,
+and low-confidence blur or occlusion areas. Do not assume a fixed number of
+regions from the diagnostic output.
 
 Timing boundary:
 - Report timing only for the reference sample video: its stable A/B boundaries,
