@@ -79,10 +79,13 @@ def main(argv: list[str] | None = None) -> int:
                 else None,
             )
         elif args.command == "reference-diagnostics":
+            reference_dir = Path(args.reference).resolve()
             result = analyze_reference_diagnostics(
                 workspace_root=workspace_root,
-                reference=Path(args.reference).resolve(),
-                output_dir=Path(args.output_dir).resolve(),
+                reference=reference_dir,
+                output_dir=Path(args.output_dir).resolve()
+                if args.output_dir
+                else reference_dir.parent / "diagnostics",
                 width=args.width,
                 height=args.height,
                 frame_start=args.frame_start,
@@ -372,7 +375,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="analyze prepared reference frames into flow, dynamic-region, and confidence evidence",
     )
     reference_diagnostics.add_argument("--reference", required=True)
-    reference_diagnostics.add_argument("--output-dir", required=True)
+    reference_diagnostics.add_argument(
+        "--output-dir",
+        help="defaults to the diagnostics folder beside the prepared reference directory",
+    )
     reference_diagnostics.add_argument("--width", type=int, default=1920)
     reference_diagnostics.add_argument("--height", type=int, default=1080)
     reference_diagnostics.add_argument("--frame-start", type=int, default=0)

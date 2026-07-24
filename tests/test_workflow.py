@@ -26,6 +26,7 @@ from agent_app.workflow import (
     score_candidate,
 )
 from agent_app.artifacts import build_render_job
+from agent_app.cli import main as cli_main
 from agent_app.candidate_controller import (
     _endpoints_are_exact,
     _motion_refinement_priority,
@@ -89,6 +90,16 @@ class WorkflowTests(unittest.TestCase):
                 elif path.is_dir():
                     path.rmdir()
             root.rmdir()
+
+    def test_reference_diagnostics_cli_defaults_to_sample_diagnostics_folder(self) -> None:
+        reference = Path("D:/work/samples/example/reference")
+        with patch("agent_app.cli.analyze_reference_diagnostics", return_value={"status": "succeeded"}) as analyze:
+            with patch("builtins.print"):
+                exit_code = cli_main(["reference-diagnostics", "--reference", str(reference)])
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(analyze.call_args.kwargs["reference"], reference.resolve())
+        self.assertEqual(analyze.call_args.kwargs["output_dir"], reference.resolve().parent / "diagnostics")
 
     def test_progress_calibration_detects_visible_internal_interval(self) -> None:
         calibration = _detect_progress_calibration(

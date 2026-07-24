@@ -58,9 +58,11 @@ Codex visual inspection or decide the transition window.
 
 ```powershell
 conda run -n harness python agent/src/main.py reference-diagnostics `
-  --reference agent/work/samples/<sample-id>/reference `
-  --output-dir agent/work/samples/<sample-id>/diagnostics
+  --reference agent/work/samples/<sample-id>/reference
 ```
+
+The command writes to `agent/work/samples/<sample-id>/diagnostics` by default.
+Use `--output-dir` only for an exceptional custom location.
 
 This produces:
 
