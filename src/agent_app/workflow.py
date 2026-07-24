@@ -776,8 +776,7 @@ def _score_motion_topology(reference: Path, motion_metrics: dict[str, Any]) -> d
     if not observed:
         return None
     region_match_rate = sum(
-        int(pair.get("candidate_motion_region_count", 0)) >= minimum_regions
-        and bool(pair.get("candidate_has_distinct_direction_groups", False))
+        int(pair.get("matched_direction_region_count", 0)) >= minimum_regions
         for pair in observed
     ) / len(observed)
     direction_match_rate = sum(

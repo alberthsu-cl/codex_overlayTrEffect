@@ -48,6 +48,15 @@ Motion-first triage:
   displacement direction, sign, and region geometry before tuning blur or
   blend. This rule applies to any motion axis or number of regions; do not
   assume horizontal bands, two regions, or four regions.
+- Do not chase tiny optical-flow fragments as shader regions. The scorer ignores
+  very small reference fragments and matches reliable regions by spatial overlap
+  plus direction. If a reliable reference region has no matching candidate
+  region, prioritize the region mask or displacement sign that controls it.
+- When the report says `structural_mismatch`, inspect
+  `matched_direction_region_count` and the per-pair region evidence. A low
+  match rate means a reliable reference region is missing or moving in the
+  wrong direction; it does not mean the candidate must reproduce every raw
+  connected-component count.
 - Choose `regions` or `displacement` for that investigation unless direct
   visual evidence rules out a motion-geometry mismatch. Do not use blur merely
   to hide an unresolved direction or region mismatch.
