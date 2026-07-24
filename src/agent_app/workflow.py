@@ -204,6 +204,13 @@ def analyze_reference_diagnostics(
     ffmpeg_path: str | None = None,
 ) -> dict[str, Any]:
     """Create deterministic reference-only motion evidence for Codex review."""
+    if output_dir.exists() and output_dir.is_file():
+        raise ValueError(f"reference diagnostics output must be a directory: {output_dir}")
+    if output_dir.suffix.lower() in {".json", ".mp4", ".png"}:
+        raise ValueError(
+            "reference diagnostics --output-dir must be a directory path, not a file path: "
+            f"{output_dir}"
+        )
     modules = load_harness_modules(workspace_root)
     frames_dir = output_dir / "reference_motion_frames"
     result = modules["analyze_reference_motion"](

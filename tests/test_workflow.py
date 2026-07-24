@@ -188,6 +188,18 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(analyze.call_args.kwargs["reference"], reference.resolve())
         self.assertEqual(analyze.call_args.kwargs["output_dir"], reference.resolve().parent / "diagnostics")
 
+    def test_reference_diagnostics_rejects_file_looking_output_directory(self) -> None:
+        with self.assertRaisesRegex(ValueError, "must be a directory path"):
+            from agent_app.workflow import analyze_reference_diagnostics
+
+            analyze_reference_diagnostics(
+                workspace_root=Path("D:/AI_Harness"),
+                reference=Path("D:/work/samples/example/reference"),
+                output_dir=Path("D:/work/samples/example/analysis/reference_motion_diagnostics.json"),
+                width=1920,
+                height=1080,
+            )
+
     def test_progress_calibration_detects_visible_internal_interval(self) -> None:
         calibration = _detect_progress_calibration(
             mae_to_a=[0.0, 0.0, 0.0, 5.0, 14.0, 30.0, 40.0, 28.0, 12.0, 4.0, 0.0, 0.0],
