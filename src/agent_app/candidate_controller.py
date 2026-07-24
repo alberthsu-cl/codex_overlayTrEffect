@@ -86,17 +86,22 @@ def start_refinement_phase(
         if isinstance(item.get("iteration"), int)
     )
     first_iteration = max(known_iterations, default=0) + 1
+    previous_phase = _active_phase(state)
+    closed_at = _timestamp()
+    if previous_phase is not None:
+        previous_phase["status"] = "closed"
+        previous_phase["closed_at"] = closed_at
+        previous_phase["closed_reason"] = "superseded_by_new_phase"
     phase = {
         "name": name,
         "baseline_iteration": baseline_iteration,
         "first_iteration": first_iteration,
         "max_iterations": max_iterations,
         "max_rejected": max_rejected,
-        "started_at": _timestamp(),
+        "started_at": closed_at,
         "status": "active",
     }
     state.setdefault("phases", [])
-    state["phases"] = [item for item in state["phases"] if item.get("name") != name]
     state["phases"].append(phase)
     state["active_phase"] = name
     state["budgets"] = {

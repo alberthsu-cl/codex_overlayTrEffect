@@ -606,6 +606,22 @@ class WorkflowTests(unittest.TestCase):
             self.assertEqual(candidate_source.read_text(encoding="utf-8"), "baseline")
             next_request = Path(continued["prompt_file"]).read_text(encoding="utf-8")
             self.assertIn("--iteration 3", next_request)
+
+            restarted = start_refinement_phase(
+                candidate_manifest_file=manifest,
+                name="optical_flow",
+                baseline_iteration=1,
+                report_file=report,
+                max_iterations=2,
+                max_rejected=2,
+            )
+            state_data = json.loads((candidate_dir / "candidate_state.json").read_text(encoding="utf-8"))
+            optical_phases = [phase for phase in state_data["phases"] if phase["name"] == "optical_flow"]
+            self.assertEqual(len(optical_phases), 2)
+            self.assertEqual(optical_phases[0]["status"], "closed")
+            self.assertEqual(optical_phases[0]["closed_reason"], "superseded_by_new_phase")
+            self.assertEqual(optical_phases[1]["status"], "active")
+            self.assertEqual(restarted["phase"]["first_iteration"], 3)
         finally:
             for path in sorted(root.rglob("*"), reverse=True):
                 if path.is_file():
