@@ -245,6 +245,48 @@ def analyze_reference_diagnostics(
     return {"status": "succeeded", "diagnostics": result, "output_file": str(output_file)}
 
 
+def ensure_reference_diagnostics(
+    workspace_root: Path,
+    reference: Path,
+    width: int = 1920,
+    height: int = 1080,
+    ffmpeg_path: str | None = None,
+) -> dict[str, Any]:
+    """Ensure canonical reference diagnostics exist before a refinement phase."""
+    output_dir = reference.resolve().parent / "diagnostics"
+    diagnostics_file = output_dir / "reference_motion_diagnostics.json"
+    if diagnostics_file.is_file():
+        try:
+            payload = load_json(diagnostics_file)
+            if (
+                payload.get("artifact_type") == "reference_motion_diagnostics"
+                and isinstance(payload.get("pairs"), list)
+                and isinstance(payload.get("summary"), dict)
+                and isinstance(payload["summary"].get("topology_contract"), dict)
+            ):
+                return {
+                    "status": "ready",
+                    "regenerated": False,
+                    "output_file": str(diagnostics_file),
+                }
+        except (OSError, ValueError):
+            pass
+
+    result = analyze_reference_diagnostics(
+        workspace_root=workspace_root,
+        reference=reference,
+        output_dir=output_dir,
+        width=width,
+        height=height,
+        ffmpeg_path=ffmpeg_path,
+    )
+    return {
+        "status": "ready",
+        "regenerated": True,
+        "output_file": result["output_file"],
+    }
+
+
 def retrieve_effect(
     workspace_root: Path,
     analysis_file: Path,

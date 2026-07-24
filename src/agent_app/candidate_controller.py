@@ -115,6 +115,51 @@ def start_refinement_phase(
     return {"status": "succeeded", "phase": phase, "state_file": str(_state_file(candidate_manifest_file))}
 
 
+def resume_candidate_refinement(
+    candidate_manifest_file: Path,
+    analysis_file: Path,
+    design_file: Path,
+    phase_name: str,
+    max_iterations: int,
+    max_rejected: int,
+) -> dict[str, Any]:
+    """Restart refinement from the selected baseline and create its first packet."""
+    state = _load_or_create_state(candidate_manifest_file)
+    profile = state.get("evaluation_profile")
+    if not isinstance(profile, dict):
+        raise ValueError("candidate has no evaluation profile; run candidate-set-evaluation-profile first")
+    baseline = state.get("baseline")
+    if not isinstance(baseline, dict):
+        raise ValueError("candidate has no selected baseline")
+    report_file = Path(str(baseline.get("report_file", "")))
+    if not report_file.is_file():
+        raise FileNotFoundError(f"selected baseline report was not found: {report_file}")
+
+    phase = start_refinement_phase(
+        candidate_manifest_file=candidate_manifest_file,
+        name=phase_name,
+        baseline_iteration=int(baseline["iteration"]),
+        report_file=report_file,
+        max_iterations=max_iterations,
+        max_rejected=max_rejected,
+    )
+    restoration = restore_candidate_baseline(candidate_manifest_file)
+    packet = build_next_iteration_packet(
+        candidate_manifest_file=candidate_manifest_file,
+        analysis_file=analysis_file,
+        design_file=design_file,
+        max_iterations=max_iterations,
+        max_rejected=max_rejected,
+        evaluate_after_edit=True,
+    )
+    return {
+        "status": "succeeded",
+        "phase": phase["phase"],
+        "restoration": restoration,
+        "packet": packet,
+    }
+
+
 def restore_candidate_baseline(candidate_manifest_file: Path) -> dict[str, Any]:
     state = _load_or_create_state(candidate_manifest_file)
     baseline = state.get("baseline")

@@ -4,21 +4,30 @@ Continue refinement for this existing candidate:
 
 D:\AI_Harness\agent\work\samples\ACTUAL_SAMPLE_ID\candidates\ACTUAL_EFFECT_NAME
 
-Run at most three additional evaluated iterations. Do not create another FX ID.
+Run at most six additional evaluated iterations. Do not create another FX ID.
 
-1. Read candidate_state.json and run candidate-status.
-2. Identify the currently selected baseline iteration and its report file.
-3. Restore the selected baseline before starting new work.
-4. Start a new phase named shader_refinement_2, using that selected baseline,
-   with max-iterations 3 and max-rejected 3.
-5. Generate the first request with candidate-next --evaluate-after-edit.
-6. For each iteration:
+1. Run this command once with the actual candidate paths and a new phase name:
+
+   ```powershell
+   conda run -n harness python agent/src/main.py candidate-resume `
+     --manifest "<candidate-root>/candidate_manifest.json" `
+     --analysis "<sample-root>/analysis/transition_structure.json" `
+     --design "<sample-root>/design/effect_design.json" `
+     --phase shader_refinement_2 `
+     --max-iterations 6 `
+     --max-rejected 3
+   ```
+
+   Use an unused phase name for a separate pass. `candidate-resume` verifies the canonical reference diagnostics, regenerates them when missing
+   or invalid, restores the selected baseline, closes the previous active phase,
+   starts the new phase, and creates the first request with evaluation enabled.
+2. For each iteration:
    - follow the newest iteration_NNN_codex_request.md;
    - edit only the candidate workspace;
    - run the embedded candidate-evaluate command;
    - run candidate-continue;
    - use the next generated request.
-7. Stop after three additional evaluations, or on a build failure, evaluation
+3. Stop after the configured additional evaluations, or on a build failure, evaluation
    failure, controller block, or exhausted phase budget.
 
 Keep endpoint behavior, the existing FX ID, and the candidate boundary intact.

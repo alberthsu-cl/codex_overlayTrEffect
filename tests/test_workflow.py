@@ -19,6 +19,7 @@ from agent_app.workflow import (
     _detect_progress_calibration,
     _reference_output_window,
     _score_motion_topology,
+    ensure_reference_diagnostics,
     build_report,
     prepare_reference,
     prepare_sources,
@@ -50,6 +51,60 @@ from agent_app.codegen import (
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_ensure_reference_diagnostics_reuses_valid_canonical_artifact(self) -> None:
+        root = Path(__file__).resolve().parents[1] / "work" / f"diagnostic_preflight_{uuid.uuid4().hex}"
+        reference = root / "reference"
+        diagnostics = root / "diagnostics"
+        try:
+            diagnostics.mkdir(parents=True)
+            diagnostic_file = diagnostics / "reference_motion_diagnostics.json"
+            diagnostic_file.write_text(
+                json.dumps(
+                    {
+                        "artifact_type": "reference_motion_diagnostics",
+                        "pairs": [],
+                        "summary": {"topology_contract": {"status": "not_required"}},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with patch("agent_app.workflow.analyze_reference_diagnostics") as analyze:
+                result = ensure_reference_diagnostics(Path("D:/AI_Harness"), reference)
+
+            self.assertFalse(result["regenerated"])
+            self.assertEqual(result["output_file"], str(diagnostic_file))
+            analyze.assert_not_called()
+        finally:
+            for path in sorted(root.rglob("*"), reverse=True):
+                if path.is_file():
+                    path.unlink()
+                elif path.is_dir():
+                    path.rmdir()
+            root.rmdir()
+
+    def test_ensure_reference_diagnostics_regenerates_missing_canonical_artifact(self) -> None:
+        root = Path(__file__).resolve().parents[1] / "work" / f"diagnostic_regenerate_{uuid.uuid4().hex}"
+        reference = root / "reference"
+        try:
+            root.mkdir(parents=True)
+            generated = root / "diagnostics" / "reference_motion_diagnostics.json"
+            with patch(
+                "agent_app.workflow.analyze_reference_diagnostics",
+                return_value={"output_file": str(generated)},
+            ) as analyze:
+                result = ensure_reference_diagnostics(Path("D:/AI_Harness"), reference)
+
+            self.assertTrue(result["regenerated"])
+            analyze.assert_called_once()
+            self.assertEqual(analyze.call_args.kwargs["output_dir"], root / "diagnostics")
+        finally:
+            for path in sorted(root.rglob("*"), reverse=True):
+                if path.is_file():
+                    path.unlink()
+                elif path.is_dir():
+                    path.rmdir()
+            root.rmdir()
+
     def test_effect_design_rejects_inconsistent_implementation_seed(self) -> None:
         design = {
             "artifact_type": "effect_design",

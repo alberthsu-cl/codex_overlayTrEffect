@@ -399,6 +399,25 @@ conda run -n harness python agent/src/main.py candidate-next `
   --evaluate-after-edit
 ```
 
+For a later refinement pass, use `candidate-resume` instead of manually
+repeating the diagnostic, baseline, phase, and packet setup. It reads the
+stored evaluation profile, regenerates missing or legacy reference diagnostics,
+restores the selected baseline, closes the previous active phase, starts the
+new bounded phase, and writes the first request with evaluation enabled:
+
+```powershell
+conda run -n harness python agent/src/main.py candidate-resume `
+  --manifest "$candidateRoot/candidate_manifest.json" `
+  --analysis agent/work/samples/<sample-id>/analysis/transition_structure.json `
+  --design agent/work/samples/<sample-id>/design/effect_design.json `
+  --phase shader_refinement_2 `
+  --max-iterations 6 `
+  --max-rejected 3
+```
+
+Use a new phase name for a separate pass. The command does not create a new FX
+ID; it continues refining the same candidate workspace.
+
 5. When the scored outcome is `accepted`, `rejected`, or `tradeoff`, the request
 invokes `candidate-continue`. It restores the selected baseline for `rejected`
 or `tradeoff` and returns the next `prompt_file`. Give that new request to Codex.

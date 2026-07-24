@@ -10,6 +10,7 @@ from .workflow import (
     benchmark_effects,
     evaluate_candidate,
     analyze_reference_diagnostics,
+    ensure_reference_diagnostics,
     prepare_reference,
     prepare_sources,
     retrieve_effect,
@@ -31,6 +32,7 @@ from .candidate_controller import (
     restore_candidate_baseline,
     set_candidate_baseline,
     set_evaluation_profile,
+    resume_candidate_refinement,
     start_refinement_phase,
 )
 from .sample_workspace import initialize_sample_workspace
@@ -262,6 +264,28 @@ def main(argv: list[str] | None = None) -> int:
                 max_rejected=args.max_rejected,
                 source_dir=Path(args.source_dir).resolve() if args.source_dir else None,
             )
+        elif args.command == "candidate-resume":
+            manifest_file = Path(args.manifest).resolve()
+            analysis_file = Path(args.analysis).resolve()
+            profile_state = json.loads((manifest_file.parent / "candidate_state.json").read_text(encoding="utf-8"))
+            profile = profile_state.get("evaluation_profile")
+            if not isinstance(profile, dict):
+                raise ValueError("candidate has no evaluation profile; run candidate-set-evaluation-profile first")
+            diagnostics = ensure_reference_diagnostics(
+                workspace_root=workspace_root,
+                reference=Path(str(profile["reference"])).resolve(),
+                width=int(profile["width"]),
+                height=int(profile["height"]),
+            )
+            result = resume_candidate_refinement(
+                candidate_manifest_file=manifest_file,
+                analysis_file=analysis_file,
+                design_file=Path(args.design).resolve(),
+                phase_name=args.phase,
+                max_iterations=args.max_iterations,
+                max_rejected=args.max_rejected,
+            )
+            result["diagnostics"] = diagnostics
         elif args.command == "candidate-record-score":
             result = record_candidate_evaluation(
                 candidate_manifest_file=Path(args.manifest).resolve(),
@@ -614,6 +638,17 @@ def build_parser() -> argparse.ArgumentParser:
     candidate_continue.add_argument("--design", required=True)
     candidate_continue.add_argument("--max-iterations", type=int, default=20)
     candidate_continue.add_argument("--max-rejected", type=int, default=8)
+
+    candidate_resume = subparsers.add_parser(
+        "candidate-resume",
+        help="verify diagnostics, restart a bounded phase from the selected baseline, and prepare its first request",
+    )
+    candidate_resume.add_argument("--manifest", required=True)
+    candidate_resume.add_argument("--analysis", required=True)
+    candidate_resume.add_argument("--design", required=True)
+    candidate_resume.add_argument("--phase", required=True)
+    candidate_resume.add_argument("--max-iterations", type=int, default=6)
+    candidate_resume.add_argument("--max-rejected", type=int, default=3)
 
     candidate_status_cmd = subparsers.add_parser(
         "candidate-status",
