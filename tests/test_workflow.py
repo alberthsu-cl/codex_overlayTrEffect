@@ -17,6 +17,7 @@ from agent_app.workflow import (
     _create_comparison_assets,
     _build_progress_schedule,
     _detect_progress_calibration,
+    _reference_output_window,
     build_report,
     prepare_reference,
     prepare_sources,
@@ -27,6 +28,7 @@ from agent_app.workflow import (
 from agent_app.artifacts import build_render_job
 from agent_app.candidate_controller import (
     _endpoints_are_exact,
+    _motion_refinement_priority,
     build_next_iteration_packet,
     human_accept_candidate,
     continue_candidate_refinement,
@@ -56,6 +58,38 @@ class WorkflowTests(unittest.TestCase):
         metrics["endpoint_checks"]["after_transition"] = {"mse": 1.1, "ssim": 0.999998}
         self.assertFalse(_endpoints_are_exact(metrics))
 
+    def test_evaluation_profile_rejects_unresolved_placeholders(self) -> None:
+        root = Path(__file__).resolve().parents[1] / "work" / f"profile_placeholder_{uuid.uuid4().hex}"
+        candidate_dir = root / "candidate"
+        candidate_dir.mkdir(parents=True)
+        manifest = candidate_dir / "candidate_manifest.json"
+        try:
+            manifest.write_text(json.dumps({"effect_id": "ModelGenerated\\Test"}), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "unresolved placeholder in job"):
+                set_evaluation_profile(
+                    manifest,
+                    {
+                        "manifest": str(manifest),
+                        "job": str(root / "<sample-id>" / "render_job.json"),
+                        "reference": str(root / "reference"),
+                        "output_root": str(candidate_dir / "evaluations"),
+                        "backup_root": str(candidate_dir / "backups"),
+                        "msbuild": "msbuild.exe",
+                        "renderer": "renderer.exe",
+                        "width": 1920,
+                        "height": 1080,
+                        "frame_start": 14,
+                        "frame_end": 44,
+                    },
+                )
+        finally:
+            for path in sorted(root.rglob("*"), reverse=True):
+                if path.is_file():
+                    path.unlink()
+                elif path.is_dir():
+                    path.rmdir()
+            root.rmdir()
+
     def test_progress_calibration_detects_visible_internal_interval(self) -> None:
         calibration = _detect_progress_calibration(
             mae_to_a=[0.0, 0.0, 0.0, 5.0, 14.0, 30.0, 40.0, 28.0, 12.0, 4.0, 0.0, 0.0],
@@ -67,6 +101,26 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(calibration["active_frame_end"], 8)
         self.assertAlmostEqual(calibration["active_progress_start"], 3 / 11)
         self.assertAlmostEqual(calibration["active_progress_end"], 8 / 11)
+
+    def test_motion_refinement_priority_requires_reliable_direction_mismatch(self) -> None:
+        priority = _motion_refinement_priority(
+            {
+                "history": [
+                    {
+                        "iteration": 2,
+                        "hypothesis_category": "blur",
+                        "metrics": {
+                            "motion": {
+                                "reliable_motion_coverage": 0.95,
+                                "direction_agreement": 0.38,
+                            }
+                        },
+                    }
+                ]
+            }
+        )
+        self.assertEqual(priority["level"], "high")
+        self.assertEqual(priority["recommended_categories"], ["regions", "displacement"])
 
     def test_progress_calibration_falls_back_when_endpoints_are_indistinct(self) -> None:
         calibration = _detect_progress_calibration(
@@ -93,6 +147,16 @@ class WorkflowTests(unittest.TestCase):
         self.assertAlmostEqual(schedule[43], 40 / 59)
         self.assertEqual(schedule[44], 1.0)
         self.assertEqual(schedule[59], 1.0)
+
+    def test_progress_calibration_prefers_explicit_evaluation_window(self) -> None:
+        window = _reference_output_window(
+            candidate_manifest_file=Path("candidate_manifest.json"),
+            reference_path=Path("reference"),
+            frame_count=60,
+            requested_frame_start=14,
+            requested_frame_end=44,
+        )
+        self.assertEqual(window, {"frame_start": 14, "frame_end": 44, "source": "evaluation_arguments"})
 
     def test_prepare_reference_forwards_manual_transition_window(self) -> None:
         result = type(

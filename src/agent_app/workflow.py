@@ -879,6 +879,8 @@ def evaluate_candidate(
                 height=height,
                 frame_count=frame_count,
                 ffmpeg_path=ffmpeg_path,
+                frame_start=frame_start,
+                frame_end=frame_end,
             )
             evaluation_job_file = Path(calibration["aligned_job_file"])
 
@@ -978,6 +980,8 @@ def calibrate_candidate_progress(
     height: int,
     frame_count: int | None,
     ffmpeg_path: str | None,
+    frame_start: int | None = None,
+    frame_end: int | None = None,
 ) -> dict[str, Any]:
     """Probe a candidate at linear progress and derive an evaluation-local schedule."""
     if output_dir.exists():
@@ -1026,6 +1030,8 @@ def calibrate_candidate_progress(
         reference_path=_resolve_workspace_path(workspace_root, inputs.get("reference_transition"), "inputs.reference_transition"),
         frame_count=count,
         analysis_file=(job.get("planning") or {}).get("analysis_artifact") if isinstance(job.get("planning"), dict) else None,
+        requested_frame_start=frame_start,
+        requested_frame_end=frame_end,
     )
     schedule = _build_progress_schedule(
         frame_count=count,
@@ -1120,21 +1126,48 @@ def _reference_output_window(
     reference_path: Path,
     frame_count: int,
     analysis_file: str | None = None,
-) -> dict[str, int]:
+    requested_frame_start: int | None = None,
+    requested_frame_end: int | None = None,
+) -> dict[str, Any]:
+    if requested_frame_start is not None or requested_frame_end is not None:
+        if requested_frame_start is None or requested_frame_end is None:
+            raise ValueError("progress calibration requires both frame_start and frame_end")
+        if (
+            requested_frame_start < 0
+            or requested_frame_end < requested_frame_start
+            or requested_frame_end >= frame_count
+        ):
+            raise ValueError("progress calibration frame range must be within the render frame count")
+        return {
+            "frame_start": requested_frame_start,
+            "frame_end": requested_frame_end,
+            "source": "evaluation_arguments",
+        }
+
     manifest = load_json(candidate_manifest_file)
     analysis_file = analysis_file or manifest.get("analysis_artifact")
     reference_manifest = load_json(reference_path / "reference_transition_manifest.json")
     mapping = reference_manifest.get("frame_progress_mapping")
     if not isinstance(analysis_file, str) or not isinstance(mapping, list):
-        return {"frame_start": 0, "frame_end": frame_count - 1}
+        return {"frame_start": 0, "frame_end": frame_count - 1, "source": "full_render_fallback"}
     transition = load_json(Path(analysis_file)).get("transition", {})
     start_source, end_source = transition.get("start_frame"), transition.get("end_frame")
     if not isinstance(start_source, int) or not isinstance(end_source, int):
-        return {"frame_start": 0, "frame_end": frame_count - 1}
+        return {"frame_start": 0, "frame_end": frame_count - 1, "source": "full_render_fallback"}
+    if 0 <= start_source <= end_source < frame_count:
+        return {
+            "frame_start": start_source,
+            "frame_end": end_source,
+            "source": "analysis_output_frames",
+        }
     matched = [item.get("output_frame") for item in mapping if isinstance(item, dict) and start_source <= item.get("normalized_clip_source_frame", -1) <= end_source]
     if not matched or not all(isinstance(item, int) for item in matched):
-        return {"frame_start": 0, "frame_end": frame_count - 1}
-    return {"frame_start": min(matched), "frame_end": max(matched)}
+        return {"frame_start": 0, "frame_end": frame_count - 1, "source": "full_render_fallback"}
+    return {
+        "frame_start": min(matched),
+        "frame_end": max(matched),
+        "source": "legacy_analysis_source_frames",
+    }
 
 
 def _resolve_workspace_path(workspace_root: Path, value: Any, field: str) -> Path:

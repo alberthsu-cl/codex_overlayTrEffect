@@ -280,6 +280,7 @@ def build_next_iteration_packet(
     latest_comparison = _latest_comparison_video(candidate_dir / "evaluations")
     latest_motion = _latest_motion_video(candidate_dir / "evaluations")
     reference_diagnostics, reference_diagnostic_video = _reference_diagnostics(analysis_file)
+    refinement_priority = _motion_refinement_priority(state)
     packet_file = candidate_dir / "packets" / f"iteration_{next_iteration:03d}_packet.json"
     prompt_file = candidate_dir / "packets" / f"iteration_{next_iteration:03d}_codex_request.md"
     candidate = load_json(candidate_manifest_file)
@@ -313,6 +314,7 @@ def build_next_iteration_packet(
         "latest_motion_video": str(latest_motion) if latest_motion else None,
         "reference_diagnostics_file": str(reference_diagnostics) if reference_diagnostics else None,
         "reference_diagnostics_video": str(reference_diagnostic_video) if reference_diagnostic_video else None,
+        "refinement_priority": refinement_priority,
         "baseline": state["baseline"],
         "history": state["history"],
         "shortlist": state["shortlist"],
@@ -358,6 +360,8 @@ def set_evaluation_profile(
     for key in required_strings:
         if not isinstance(profile.get(key), str) or not profile[key]:
             raise ValueError(f"evaluation profile requires {key}")
+        if re.search(r"<[^>]+>", profile[key]):
+            raise ValueError(f"evaluation profile has unresolved placeholder in {key}")
     for key in ("width", "height"):
         if not isinstance(profile.get(key), int) or profile[key] < 1:
             raise ValueError(f"evaluation profile requires a positive {key}")
@@ -823,6 +827,43 @@ def _reference_diagnostics(analysis_file: Path) -> tuple[Path | None, Path | Non
     return diagnostics_file, video_file if video_file and video_file.exists() else None
 
 
+def _motion_refinement_priority(state: dict[str, Any]) -> dict[str, Any]:
+    """Prioritize motion geometry only when its diagnostics are reliable."""
+    scored = [
+        item
+        for item in state.get("history", [])
+        if isinstance(item, dict)
+        and item.get("hypothesis_category") != "baseline"
+        and isinstance(item.get("metrics"), dict)
+    ]
+    if not scored:
+        return {"level": "normal", "reason": "no prior refinement motion metrics"}
+    latest = max(scored, key=lambda item: int(item.get("iteration", -1)))
+    motion = latest["metrics"].get("motion")
+    if not isinstance(motion, dict):
+        return {"level": "normal", "reason": "latest evaluation has no motion metrics"}
+    coverage = motion.get("reliable_motion_coverage")
+    agreement = motion.get("direction_agreement")
+    if (
+        isinstance(coverage, (int, float))
+        and isinstance(agreement, (int, float))
+        and coverage >= 0.6
+        and agreement < 0.6
+    ):
+        return {
+            "level": "high",
+            "focus": "motion_geometry",
+            "reason": "reliable motion diagnostics show weak direction agreement",
+            "reliable_motion_coverage": float(coverage),
+            "direction_agreement": float(agreement),
+            "recommended_categories": ["regions", "displacement"],
+        }
+    return {
+        "level": "normal",
+        "reason": "motion diagnostics do not currently require geometry-first refinement",
+    }
+
+
 def _evaluation_command(profile: dict[str, Any], iteration: int) -> str:
     backup_dir = Path(profile["backup_root"]) / f"iteration_{iteration:03d}_{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}"
     lines = [
@@ -883,6 +924,8 @@ Edit only:
 
 Refine {packet['effect_id']} for iteration {packet['iteration']}.
 
+{_refinement_priority_instruction(packet.get('refinement_priority'))}
+
 Choose exactly one hypothesis category from: {allowed}.
 Do not repeat a rejected category unless you provide new visual evidence.
 Preserve the FX ID, class names, endpoint behavior, and candidate workspace boundary.
@@ -890,6 +933,19 @@ Create or update exactly one iteration_{packet['iteration']:03d}_*.json record w
 `hypothesis_category`, `visual_hypothesis`, `changed_files`, and expected outcome.
 {_evaluation_instruction(packet)}
 """
+
+
+def _refinement_priority_instruction(priority: Any) -> str:
+    if not isinstance(priority, dict) or priority.get("level") != "high":
+        return "Current refinement priority: normal. Use the available evidence to choose the next hypothesis."
+    categories = ", ".join(str(category) for category in priority.get("recommended_categories", []))
+    coverage = priority.get("reliable_motion_coverage")
+    agreement = priority.get("direction_agreement")
+    return (
+        "Current refinement priority: high motion geometry. "
+        f"Reliable motion coverage is {coverage:.3f} and direction agreement is {agreement:.3f}. "
+        f"Investigate {categories} before blur or blend unless direct visual evidence rules out a direction or region mismatch."
+    )
 
 
 def _evaluation_instruction(packet: dict[str, Any]) -> str:

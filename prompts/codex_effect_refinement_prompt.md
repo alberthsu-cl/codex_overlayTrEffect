@@ -38,8 +38,22 @@ that the image has only two or four regions. Infer region boundaries and motion
 from the reference frames when the evidence supports them.
 
 Treat MSE and SSIM as image-similarity signals, not a complete description of a
-transition. For horizontal banded motion, compare the candidate and reference
-motion diagnostics before changing displacement, direction, or region layout.
+transition. For any visible motion, compare the candidate and reference motion
+diagnostics before changing displacement, direction, or region layout.
+
+Motion-first triage:
+- When the packet marks motion geometry as high priority, inspect the reference
+  and candidate motion diagnostics before choosing a hypothesis.
+- If reliable motion coverage is high but direction agreement is weak, correct
+  displacement direction, sign, and region geometry before tuning blur or
+  blend. This rule applies to any motion axis or number of regions; do not
+  assume horizontal bands, two regions, or four regions.
+- Choose `regions` or `displacement` for that investigation unless direct
+  visual evidence rules out a motion-geometry mismatch. Do not use blur merely
+  to hide an unresolved direction or region mismatch.
+- Move to blur, blend, or fine timing only after motion geometry is consistent
+  with the reference, or when the diagnostics explicitly show motion is not
+  reliable enough to decide it.
 
 Renderer progress alignment and shader timing are separate concerns. If the
 candidate begins or ends on different output frames from the reference, do not

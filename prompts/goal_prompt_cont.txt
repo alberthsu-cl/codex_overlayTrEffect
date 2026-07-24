@@ -1,0 +1,29 @@
+/goal
+
+Continue refinement for this existing candidate:
+
+D:\AI_Harness\agent\work\samples\ACTUAL_SAMPLE_ID\candidates\ACTUAL_EFFECT_NAME
+
+Run at most three additional evaluated iterations. Do not create another FX ID.
+
+1. Read candidate_state.json and run candidate-status.
+2. Identify the currently selected baseline iteration and its report file.
+3. Restore the selected baseline before starting new work.
+4. Start a new phase named shader_refinement_2, using that selected baseline,
+   with max-iterations 3 and max-rejected 3.
+5. Generate the first request with candidate-next --evaluate-after-edit.
+6. For each iteration:
+   - follow the newest iteration_NNN_codex_request.md;
+   - edit only the candidate workspace;
+   - run the embedded candidate-evaluate command;
+   - run candidate-continue;
+   - use the next generated request.
+7. Stop after three additional evaluations, or on a build failure, evaluation
+   failure, controller block, or exhausted phase budget.
+
+Keep endpoint behavior, the existing FX ID, and the candidate boundary intact.
+When reliable motion coverage is high but direction agreement is weak, prioritize
+regions or displacement before blur or blend.
+
+Report the selected baseline iteration, completed iteration numbers, final
+controller status, and final comparison-video path.

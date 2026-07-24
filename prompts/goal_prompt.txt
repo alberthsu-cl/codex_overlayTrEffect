@@ -1,0 +1,79 @@
+/goal
+
+Build and refine one new transition shader from this sample video:
+
+Sample video:
+D:\PATH\TO\YOUR\NEW_SAMPLE.mp4
+
+Sample ID:
+YOUR_NEW_SAMPLE_ID
+
+Work only under:
+D:\AI_Harness\agent\work\samples\YOUR_NEW_SAMPLE_ID
+
+Goal:
+Create one new ModelGenerated FX ID, establish a valid calibrated baseline, then
+run at most three candidate refinement evaluations for that same FX ID.
+
+Process:
+
+1. Initialize the sample workspace with the given sample ID and video.
+
+2. Prepare 60 reference frames at 1920x1080 and generate reference motion
+   diagnostics.
+
+3. Analyze the sample directly using:
+   - agent/prompts/codex_transition_analysis_prompt.md
+   - agent/prompts/codex_transition_analysis_schema.json
+   - prepared reference frames and reference motion diagnostics
+
+   Save the valid transition_structure JSON under the sample analysis folder.
+
+4. Prepare source A/B using the default endpoint mode:
+   - source A is original video frame 0
+   - source B is the final decoded video frame
+   - do not require manual frame indices or source-boundary analysis
+
+5. Sync the effect catalog. Analyze the design using:
+   - agent/prompts/effect_design_prompt.md
+   - agent/prompts/effect_design_schema.json
+   - the transition analysis
+   - current registered OverlayTrEngine effects
+
+   Delivery policy: this sample must produce a new shader deliverable. Assign a
+   unique ModelGenerated\Family_XX FX ID. Existing effects may be cloned only
+   as a starting point; do not modify them.
+
+6. Build the render job. Generate the effect seed, register it, and initialize
+   its isolated candidate workspace. Derive the effect folder name from
+   target_effect.effect_id; do not invent a second FX ID.
+
+7. Run the initial candidate evaluation with:
+   - reference transition output window from transition_structure.json
+   - --calibrate-progress
+   - a unique backup directory
+
+   Confirm the endpoint checks meet baseline tolerance. If they do not, fix
+   the workflow/configuration issue before starting refinement.
+
+8. Configure the candidate evaluation profile using only actual resolved paths,
+   never literal documentation placeholders. Start a shader_refinement phase
+   with max-iterations 3 and max-rejected 3. Generate the first request with
+   --evaluate-after-edit.
+
+9. For up to three refinement iterations:
+   - read and follow the newest iteration_NNN_codex_request.md;
+   - edit only that candidate workspace;
+   - run its embedded candidate-evaluate command;
+   - run candidate-continue;
+   - use the next generated request.
+
+   Motion-first rule: when reliable motion coverage is high but direction
+   agreement is weak, investigate regions or displacement before blur or
+   blend. Keep the approach general; do not assume a fixed number of regions
+   or a horizontal-only transition.
+
+Stop when three refinement evaluations have completed, the controller reaches a
+budget/block/failure state, or a required build/evaluation fails. Report the
+final FX ID, selected baseline iteration, final report path, and comparison
+video path.
