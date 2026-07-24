@@ -18,6 +18,7 @@ from agent_app.workflow import (
     _build_progress_schedule,
     _detect_progress_calibration,
     _reference_output_window,
+    _score_motion_topology,
     build_report,
     prepare_reference,
     prepare_sources,
@@ -25,11 +26,12 @@ from agent_app.workflow import (
     retrieve_effect,
     score_candidate,
 )
-from agent_app.artifacts import build_render_job
+from agent_app.artifacts import build_render_job, validate_effect_design
 from agent_app.cli import main as cli_main
 from agent_app.candidate_controller import (
     _endpoints_are_exact,
     _motion_refinement_priority,
+    _select_outcome,
     build_next_iteration_packet,
     human_accept_candidate,
     continue_candidate_refinement,
@@ -48,6 +50,91 @@ from agent_app.codegen import (
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_effect_design_rejects_inconsistent_implementation_seed(self) -> None:
+        design = {
+            "artifact_type": "effect_design",
+            "artifact_version": 1,
+            "analysis_artifact": "analysis.json",
+            "decision": {"action": "tune_existing_effect", "confidence": 0.8},
+            "target_effect": {
+                "family": "split_slide",
+                "effect_id": "ModelGenerated\\SplitSlide_01",
+                "closest_existing_effect_id": "ModelGenerated\\HorizontalSplitBlur_01",
+            },
+            "implementation_seed": {
+                "family": "dissolve",
+                "template_effect_id": "ModelGenerated\\Dissolve_01",
+                "required_shader_capabilities": ["spatial_displacement"],
+            },
+            "design_notes": {"must_preserve": [], "approximations": [], "risks": []},
+            "source_variant": {"base_stem": "TrModelGeneratedHorizontalSplitBlur01"},
+        }
+
+        issues = validate_effect_design(design)
+        self.assertIn("target_effect.family must match implementation_seed.family", issues)
+        self.assertIn(
+            "implementation_seed.template_effect_id must match target_effect.closest_existing_effect_id", issues
+        )
+
+    def test_motion_topology_requires_candidate_direction_groups(self) -> None:
+        root = Path(__file__).resolve().parents[1] / "work" / f"topology_score_{uuid.uuid4().hex}"
+        reference = root / "reference"
+        diagnostics = root / "diagnostics"
+        try:
+            diagnostics.mkdir(parents=True)
+            (diagnostics / "reference_motion_diagnostics.json").write_text(
+                json.dumps(
+                    {
+                        "summary": {
+                            "topology_contract": {
+                                "status": "required",
+                                "minimum_concurrent_regions": 2,
+                                "evidence_pairs": [{"from_frame": 4, "to_frame": 5}],
+                            }
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            result = _score_motion_topology(
+                reference,
+                {
+                    "pairs": [
+                        {
+                            "from_frame": 4,
+                            "to_frame": 5,
+                            "candidate_motion_region_count": 2,
+                            "candidate_has_distinct_direction_groups": False,
+                            "direction_agreement": 0.9,
+                        }
+                    ]
+                },
+            )
+            self.assertEqual(result["status"], "structural_mismatch")
+            self.assertEqual(result["candidate_region_match_rate"], 0.0)
+        finally:
+            for path in sorted(root.rglob("*"), reverse=True):
+                if path.is_file():
+                    path.unlink()
+                elif path.is_dir():
+                    path.rmdir()
+            root.rmdir()
+
+    def test_controller_rejects_required_motion_topology_mismatch(self) -> None:
+        metrics = {
+            "endpoint_checks": {
+                "before_transition": {"mse": 0.0, "ssim": 1.0},
+                "after_transition": {"mse": 0.0, "ssim": 1.0},
+            },
+            "motion_topology": {"status": "structural_mismatch"},
+            "mse": 1.0,
+            "ssim": 0.9,
+        }
+
+        outcome, reason = _select_outcome(None, metrics)
+        self.assertEqual(outcome, "rejected")
+        self.assertIn("motion topology", reason)
+
     def test_controller_allows_negligible_endpoint_compression_variance(self) -> None:
         metrics = {
             "endpoint_checks": {

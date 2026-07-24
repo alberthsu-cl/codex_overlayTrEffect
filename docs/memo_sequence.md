@@ -148,6 +148,13 @@ Save the returned JSON as:
 agent/work/samples/<sample-id>/design/effect_design.json
 ```
 
+For a new generated effect, the design must also include `implementation_seed`.
+Its `family` identifies the structural shader family, `template_effect_id`
+identifies the actual clone source, and `required_shader_capabilities` lists
+the behavior the new shader must support. These fields must agree with
+`target_effect`; do not label a spatial multi-region transition as `dissolve`
+solely because it contains a blend.
+
 ## 7. Build a Render Job
 
 Create the job from the analysis, design, source A/B frames, and prepared

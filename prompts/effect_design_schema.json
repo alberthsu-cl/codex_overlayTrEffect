@@ -112,6 +112,16 @@
         }
       }
     },
+    "implementation_seed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["family", "required_shader_capabilities"],
+      "properties": {
+        "family": {"type": "string"},
+        "template_effect_id": {"type": "string"},
+        "required_shader_capabilities": {"type": "array", "items": {"type": "string"}}
+      }
+    },
     "source_variant": {
       "type": "object",
       "additionalProperties": false,

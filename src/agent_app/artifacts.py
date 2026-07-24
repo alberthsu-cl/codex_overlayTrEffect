@@ -76,6 +76,23 @@ def validate_effect_design(payload: dict[str, Any]) -> list[str]:
     if isinstance(target_effect, dict):
         _require_field(target_effect, "family", issues, prefix="target_effect")
 
+    seed = payload.get("implementation_seed")
+    if seed is not None:
+        if not isinstance(seed, dict):
+            issues.append("implementation_seed must be an object")
+        else:
+            for field in ("family", "required_shader_capabilities"):
+                _require_field(seed, field, issues, prefix="implementation_seed")
+            if not isinstance(seed.get("required_shader_capabilities"), list):
+                issues.append("implementation_seed.required_shader_capabilities must be an array")
+            if isinstance(target_effect, dict) and isinstance(seed.get("family"), str):
+                if target_effect.get("family") != seed["family"]:
+                    issues.append("target_effect.family must match implementation_seed.family")
+            variant = payload.get("source_variant")
+            if isinstance(variant, dict) and isinstance(seed.get("template_effect_id"), str):
+                if isinstance(target_effect, dict) and target_effect.get("closest_existing_effect_id") != seed["template_effect_id"]:
+                    issues.append("implementation_seed.template_effect_id must match target_effect.closest_existing_effect_id")
+
     design_notes = payload.get("design_notes")
     if isinstance(design_notes, dict):
         for field in ("must_preserve", "approximations", "risks"):

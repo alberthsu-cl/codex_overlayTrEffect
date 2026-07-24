@@ -60,6 +60,14 @@ New-effect delivery policy:
   names automatically.
 - `reuse_existing_effect` is permitted only when the request explicitly says
   that no new shader deliverable is required, such as a benchmark-only run.
+- For every new deliverable, include `implementation_seed`:
+  `family` names the structural implementation family used in the new FX ID,
+  `template_effect_id` identifies the cloned seed when applicable, and
+  `required_shader_capabilities` lists the capabilities the shader must expose.
+  Do not use a visual primitive such as `dissolve` as the implementation family
+  when the seed and required behavior are a spatial displacement or multi-region
+  effect. For a source variant, `template_effect_id` must equal
+  `target_effect.closest_existing_effect_id`.
 
 Use the supplied effect-design schema. The final response must satisfy that schema exactly.
 ```

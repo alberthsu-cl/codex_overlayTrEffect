@@ -51,6 +51,13 @@ chooses the smallest viable strategy:
 - tune an existing effect; or
 - implement a new effect.
 
+For a new generated effect, the design also records an explicit
+`implementation_seed`: the structural implementation family, the cloned
+template effect when applicable, and the shader capabilities required by the
+visible transition. This prevents a visual label such as `dissolve` from
+silently selecting an incompatible single-vector implementation for a
+multi-region motion effect.
+
 Local tooling then prepares the A/B inputs, invokes the headless renderer, and
 scores the rendered frames against the prepared reference transition. The
 current scoring stage is algorithmic. Agent-assisted scoring can be added

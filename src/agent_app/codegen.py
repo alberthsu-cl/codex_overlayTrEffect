@@ -81,6 +81,7 @@ def generate_effect(
         "class_name": class_name,
         "shader_symbol": shader_symbol,
         "generated_files": generated_files,
+        "implementation_seed": design.get("implementation_seed"),
         "registration": {
             "fx_info_header": "overlaytrengine/OverlayTrPlugInFx/FxInfo.h",
             "plugin_source": "overlaytrengine/OverlayTrPlugInFx/OverlayTrPlugInFx.cpp",
@@ -218,6 +219,7 @@ def _generate_source_variant(
         "generated_files": generated_files,
         "generated_resources": generated_resources,
         "source_replacements": replacements,
+        "implementation_seed": design.get("implementation_seed"),
         "registration": {"required": True},
     }
     write_json(manifest_file, manifest)

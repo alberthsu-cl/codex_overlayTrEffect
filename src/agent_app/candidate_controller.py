@@ -583,6 +583,9 @@ def _metrics_from_report(report: dict[str, Any]) -> dict[str, Any]:
         if isinstance(motion.get("horizontal_shift_mae"), (int, float)):
             motion_metrics["horizontal_shift_mae"] = _number(motion, "horizontal_shift_mae")
         metrics["motion"] = motion_metrics
+    topology = score.get("motion_topology")
+    if isinstance(topology, dict):
+        metrics["motion_topology"] = topology
     return metrics
 
 
@@ -612,6 +615,9 @@ def _endpoints_are_exact(metrics: dict[str, Any]) -> bool:
 def _select_outcome(baseline: dict[str, Any] | None, metrics: dict[str, Any]) -> tuple[str, str]:
     if not _endpoints_are_exact(metrics):
         return "rejected", "endpoint checks exceed stable-frame tolerance"
+    topology = metrics.get("motion_topology")
+    if isinstance(topology, dict) and topology.get("status") == "structural_mismatch":
+        return "rejected", "candidate violates the required reference motion topology"
     if baseline is None:
         return "accepted", "first valid evaluation becomes the baseline"
     previous = baseline["metrics"]
@@ -840,6 +846,15 @@ def _motion_refinement_priority(state: dict[str, Any]) -> dict[str, Any]:
         return {"level": "normal", "reason": "no prior refinement motion metrics"}
     latest = max(scored, key=lambda item: int(item.get("iteration", -1)))
     motion = latest["metrics"].get("motion")
+    topology = latest["metrics"].get("motion_topology")
+    if isinstance(topology, dict) and topology.get("status") == "structural_mismatch":
+        return {
+            "level": "high",
+            "focus": "motion_topology",
+            "reason": "candidate collapses a required reference motion topology",
+            "topology": topology,
+            "recommended_categories": ["shader_structure", "regions"],
+        }
     if not isinstance(motion, dict):
         return {"level": "normal", "reason": "latest evaluation has no motion metrics"}
     coverage = motion.get("reliable_motion_coverage")
@@ -939,6 +954,17 @@ def _refinement_priority_instruction(priority: Any) -> str:
     if not isinstance(priority, dict) or priority.get("level") != "high":
         return "Current refinement priority: normal. Use the available evidence to choose the next hypothesis."
     categories = ", ".join(str(category) for category in priority.get("recommended_categories", []))
+    if priority.get("focus") == "motion_topology":
+        topology = priority.get("topology") if isinstance(priority.get("topology"), dict) else {}
+        evidence_count = topology.get("evidence_pair_count", 0)
+        region_match_rate = topology.get("candidate_region_match_rate", 0.0)
+        direction_match_rate = topology.get("direction_match_rate", 0.0)
+        return (
+            "Current refinement priority: high motion topology. The reference requires multiple spatial direction groups, "
+            f"but the candidate does not satisfy that contract across {evidence_count} evidence pairs "
+            f"(region-topology match {region_match_rate:.3f}, direction match {direction_match_rate:.3f}). "
+            "Implement a per-pixel motion field or spatial masks; do not continue tuning one global displacement vector."
+        )
     coverage = priority.get("reliable_motion_coverage")
     agreement = priority.get("direction_agreement")
     return (

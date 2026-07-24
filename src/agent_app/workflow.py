@@ -665,6 +665,9 @@ def score_candidate(
                 ffmpeg_path=ffmpeg_path,
             )
             score["motion_metrics"] = motion_metrics
+            topology = _score_motion_topology(reference, motion_metrics)
+            if topology is not None:
+                score["motion_topology"] = topology
             score["transition_diagnostics"]["worst_motion_pairs"] = sorted(
                 motion_metrics["pairs"],
                 key=lambda pair: float(pair.get("vector_mae", pair.get("mean_shift_error", 0.0))),
@@ -695,6 +698,49 @@ def score_candidate(
     score["status"] = "succeeded"
     write_json(output_file, score)
     return score
+
+
+def _score_motion_topology(reference: Path, motion_metrics: dict[str, Any]) -> dict[str, Any] | None:
+    diagnostics_file = reference.parent / "diagnostics" / "reference_motion_diagnostics.json"
+    if not diagnostics_file.exists():
+        return None
+    diagnostics = load_json(diagnostics_file)
+    contract = (diagnostics.get("summary") or {}).get("topology_contract")
+    if not isinstance(contract, dict) or contract.get("status") != "required":
+        return None
+    evidence = contract.get("evidence_pairs")
+    pairs = motion_metrics.get("pairs")
+    if not isinstance(evidence, list) or not isinstance(pairs, list):
+        return None
+    pair_by_range = {
+        (pair.get("from_frame"), pair.get("to_frame")): pair
+        for pair in pairs
+        if isinstance(pair, dict)
+    }
+    minimum_regions = int(contract.get("minimum_concurrent_regions", 2))
+    observed = [
+        pair_by_range.get((item.get("from_frame"), item.get("to_frame")))
+        for item in evidence
+        if isinstance(item, dict)
+    ]
+    observed = [pair for pair in observed if isinstance(pair, dict)]
+    if not observed:
+        return None
+    region_match_rate = sum(
+        int(pair.get("candidate_motion_region_count", 0)) >= minimum_regions
+        and bool(pair.get("candidate_has_distinct_direction_groups", False))
+        for pair in observed
+    ) / len(observed)
+    direction_match_rate = sum(
+        float(pair.get("direction_agreement", 0.0)) >= 0.5 for pair in observed
+    ) / len(observed)
+    return {
+        "contract": contract,
+        "evidence_pair_count": len(observed),
+        "candidate_region_match_rate": region_match_rate,
+        "direction_match_rate": direction_match_rate,
+        "status": "satisfied" if region_match_rate >= 0.5 and direction_match_rate >= 0.5 else "structural_mismatch",
+    }
 
 
 def _build_windowed_score(
