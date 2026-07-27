@@ -666,7 +666,11 @@ def _select_outcome(baseline: dict[str, Any] | None, metrics: dict[str, Any]) ->
     if not _endpoints_are_exact(metrics):
         return "rejected", "endpoint checks exceed stable-frame tolerance"
     topology = metrics.get("motion_topology")
-    if isinstance(topology, dict) and topology.get("status") == "structural_mismatch":
+    if (
+        isinstance(topology, dict)
+        and topology.get("status") == "structural_mismatch"
+        and topology.get("enforcement") == "hard"
+    ):
         return "rejected", "candidate violates the required reference motion topology"
     if baseline is None:
         return "accepted", "first valid evaluation becomes the baseline"

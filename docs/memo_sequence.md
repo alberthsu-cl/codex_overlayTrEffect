@@ -351,6 +351,14 @@ Review the emitted comparison video. If the reference and candidate timing is
 still visibly misaligned, correct calibration or preparation before starting a
 shader iteration.
 
+When `--iteration` is supplied, new evaluation folders are named from the
+matching iteration record and effect job, for example
+`iteration_030_displacement_band_magnitude_20260727T074106Z`.
+The candidate directory already identifies the effect, so the run folder only
+adds the refinement hypothesis and timestamp.
+Evaluations without a unique matching iteration record retain the render job's
+original folder prefix.
+
 2. Start a bounded phase from this valid baseline. Replace `<baseline-run>`
 with the new evaluation folder. This creates baseline iteration `0` and its
 source snapshot:
@@ -417,6 +425,10 @@ conda run -n harness python agent/src/main.py candidate-resume `
 
 Use a new phase name for a separate pass. The command does not create a new FX
 ID; it continues refining the same candidate workspace.
+
+Motion topology is currently advisory by default. It remains available to
+guide Codex, but it does not reject a candidate unless a future scoring policy
+explicitly marks the topology contract as `hard`.
 
 5. When the scored outcome is `accepted`, `rejected`, or `tradeoff`, the request
 invokes `candidate-continue`. It restores the selected baseline for `rejected`

@@ -57,6 +57,9 @@ Motion-first triage:
   match rate means a reliable reference region is missing or moving in the
   wrong direction; it does not mean the candidate must reproduce every raw
   connected-component count.
+- Treat motion topology as advisory unless the packet explicitly says its
+  enforcement is `hard`. Do not reshape a shader only to reproduce unstable
+  or low-area optical-flow fragments.
 - Choose `regions` or `displacement` for that investigation unless direct
   visual evidence rules out a motion-geometry mismatch. Do not use blur merely
   to hide an unresolved direction or region mismatch.

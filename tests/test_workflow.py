@@ -16,6 +16,7 @@ from agent_app.workflow import (
     _encode_artifact_video,
     _create_comparison_assets,
     _build_progress_schedule,
+    _candidate_evaluation_run_name,
     _detect_progress_calibration,
     _reference_output_window,
     _score_motion_topology,
@@ -51,6 +52,53 @@ from agent_app.codegen import (
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_candidate_evaluation_run_name_uses_iteration_record_stem(self) -> None:
+        root = Path(__file__).resolve().parents[1] / "work" / f"evaluation_name_{uuid.uuid4().hex}"
+        candidate_dir = root / "candidate"
+        candidate_dir.mkdir(parents=True)
+        manifest = candidate_dir / "candidate_manifest.json"
+        job = root / "render_job.json"
+        try:
+            manifest.write_text("{}", encoding="utf-8")
+            (candidate_dir / "iteration_030_displacement_band_magnitude.json").write_text("{}", encoding="utf-8")
+            job.write_text(json.dumps({"job_name": "agent_tune_existing_effect_HorizontalSplitBlur"}), encoding="utf-8")
+
+            result = _candidate_evaluation_run_name(manifest, 30)
+
+            self.assertEqual(
+                result,
+                "iteration_030_displacement_band_magnitude",
+            )
+        finally:
+            for path in sorted(root.rglob("*"), reverse=True):
+                if path.is_file():
+                    path.unlink()
+                elif path.is_dir():
+                    path.rmdir()
+            root.rmdir()
+
+    def test_candidate_evaluation_run_name_falls_back_without_iteration_record(self) -> None:
+        root = Path(__file__).resolve().parents[1] / "work" / f"evaluation_name_{uuid.uuid4().hex}"
+        candidate_dir = root / "candidate"
+        candidate_dir.mkdir(parents=True)
+        manifest = candidate_dir / "candidate_manifest.json"
+        job = root / "render_job.json"
+        try:
+            manifest.write_text("{}", encoding="utf-8")
+            job.write_text(
+                json.dumps({"job_name": "agent_tune_existing_effect_HorizontalSplitBlur"}),
+                encoding="utf-8",
+            )
+
+            self.assertIsNone(_candidate_evaluation_run_name(manifest, 30))
+        finally:
+            for path in sorted(root.rglob("*"), reverse=True):
+                if path.is_file():
+                    path.unlink()
+                elif path.is_dir():
+                    path.rmdir()
+            root.rmdir()
+
     def test_ensure_reference_diagnostics_reuses_valid_canonical_artifact(self) -> None:
         root = Path(__file__).resolve().parents[1] / "work" / f"diagnostic_preflight_{uuid.uuid4().hex}"
         reference = root / "reference"
@@ -175,13 +223,28 @@ class WorkflowTests(unittest.TestCase):
                     path.rmdir()
             root.rmdir()
 
-    def test_controller_rejects_required_motion_topology_mismatch(self) -> None:
+    def test_controller_treats_advisory_motion_topology_mismatch_as_nonblocking(self) -> None:
         metrics = {
             "endpoint_checks": {
                 "before_transition": {"mse": 0.0, "ssim": 1.0},
                 "after_transition": {"mse": 0.0, "ssim": 1.0},
             },
             "motion_topology": {"status": "structural_mismatch"},
+            "mse": 1.0,
+            "ssim": 0.9,
+        }
+
+        outcome, reason = _select_outcome(None, metrics)
+        self.assertEqual(outcome, "accepted")
+        self.assertIn("first valid evaluation", reason)
+
+    def test_controller_rejects_explicit_hard_motion_topology_mismatch(self) -> None:
+        metrics = {
+            "endpoint_checks": {
+                "before_transition": {"mse": 0.0, "ssim": 1.0},
+                "after_transition": {"mse": 0.0, "ssim": 1.0},
+            },
+            "motion_topology": {"status": "structural_mismatch", "enforcement": "hard"},
             "mse": 1.0,
             "ssim": 0.9,
         }

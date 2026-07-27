@@ -458,10 +458,12 @@ def render_job(
     output_root: Path,
     renderer: str | None,
     ffmpeg_path: str | None = None,
+    run_name_prefix: str | None = None,
 ) -> dict[str, Any]:
     modules = load_harness_modules(workspace_root)
     job = modules["load_render_job"](job_file)
-    run_root = output_root / f"{job.job_name}_{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}"
+    run_name = run_name_prefix or job.job_name
+    run_root = output_root / f"{run_name}_{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}"
     inputs_dir = run_root / "inputs"
     render_dir = run_root / "render"
     reports_dir = run_root / "reports"
@@ -787,6 +789,7 @@ def _score_motion_topology(reference: Path, motion_metrics: dict[str, Any]) -> d
         "evidence_pair_count": len(observed),
         "candidate_region_match_rate": region_match_rate,
         "direction_match_rate": direction_match_rate,
+        "enforcement": contract.get("enforcement", "advisory"),
         "status": "satisfied" if region_match_rate >= 0.5 and direction_match_rate >= 0.5 else "structural_mismatch",
     }
 
@@ -984,6 +987,10 @@ def evaluate_candidate(
             output_root=output_root,
             renderer=renderer,
             ffmpeg_path=ffmpeg_path,
+            run_name_prefix=_candidate_evaluation_run_name(
+                candidate_manifest_file=candidate_manifest_file,
+                iteration=iteration,
+            ),
         )
         if render_result.get("status") != "succeeded":
             raise RuntimeError(f"candidate render failed: {render_result.get('message')}")
@@ -1269,6 +1276,23 @@ def _resolve_workspace_path(workspace_root: Path, value: Any, field: str) -> Pat
         raise ValueError(f"candidate evaluation job has invalid {field}")
     path = Path(value)
     return path if path.is_absolute() else workspace_root / path
+
+
+def _candidate_evaluation_run_name(
+    candidate_manifest_file: Path,
+    iteration: int | None,
+) -> str | None:
+    """Build a readable evaluation prefix from its iteration record and effect job."""
+    if iteration is None:
+        return None
+
+    iteration_records = sorted(
+        candidate_manifest_file.parent.glob(f"iteration_{iteration:03d}_*.json")
+    )
+    if len(iteration_records) != 1:
+        return None
+
+    return iteration_records[0].stem
 
 
 def build_job_from_artifacts(
