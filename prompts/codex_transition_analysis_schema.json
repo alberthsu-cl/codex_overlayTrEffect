@@ -237,6 +237,34 @@
         "type": "string"
       }
     },
+    "evaluation_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "motion_topology": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode"],
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": ["disabled", "advisory", "hard"],
+              "description": "Whether candidate motion topology is irrelevant, diagnostic-only, or a hard acceptance requirement. Use hard only when the visible segmented structure is unambiguous and essential."
+            },
+            "minimum_region_match_rate": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "minimum_direction_match_rate": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          }
+        }
+      }
+    },
     "planner_hints": {
       "type": "object",
       "additionalProperties": false,

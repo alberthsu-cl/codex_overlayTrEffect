@@ -426,9 +426,13 @@ conda run -n harness python agent/src/main.py candidate-resume `
 Use a new phase name for a separate pass. The command does not create a new FX
 ID; it continues refining the same candidate workspace.
 
-Motion topology is currently advisory by default. It remains available to
-guide Codex, but it does not reject a candidate unless a future scoring policy
-explicitly marks the topology contract as `hard`.
+Motion-topology scoring is policy-driven. The effect design policy takes
+priority over the transition analysis policy; otherwise the scorer infers it
+from segmented structure such as bands, quadrants, or multiple regions. Use
+`disabled` for non-segmented effects, `advisory` for useful but uncertain flow
+evidence, and `hard` only for an explicit strict deliverable requirement.
+Advisory topology remains available to guide Codex but does not reject a
+candidate.
 
 5. When the scored outcome is `accepted`, `rejected`, or `tradeoff`, the request
 invokes `candidate-continue`. It restores the selected baseline for `rejected`

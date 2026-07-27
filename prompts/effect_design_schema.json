@@ -77,6 +77,34 @@
         }
       }
     },
+    "evaluation_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "motion_topology": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode"],
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": ["disabled", "advisory", "hard"],
+              "description": "Optional design override for motion-topology scoring. Use disabled for non-segmented effects, advisory for useful but uncertain geometry evidence, and hard only when topology is a required deliverable characteristic."
+            },
+            "minimum_region_match_rate": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "minimum_direction_match_rate": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          }
+        }
+      }
+    },
     "design_notes": {
       "type": "object",
       "additionalProperties": false,

@@ -69,5 +69,15 @@ New-effect delivery policy:
   effect. For a source variant, `template_effect_id` must equal
   `target_effect.closest_existing_effect_id`.
 
+Evaluation policy:
+- Include `evaluation_policy.motion_topology` when the design needs to override
+  the analysis policy for regression.
+- Set `mode` to `disabled` for non-segmented effects, `advisory` when motion
+  topology is useful diagnostic evidence but should not block acceptance, and
+  `hard` only when matching a clear multi-region directional structure is an
+  explicit deliverable requirement.
+- Do not apply a split or region topology requirement merely because dense flow
+  found transient fragments in the reference.
+
 Use the supplied effect-design schema. The final response must satisfy that schema exactly.
 ```

@@ -681,6 +681,8 @@ def score_candidate(
     frame_start: int | None = None,
     frame_end: int | None = None,
     endpoint_frame_count: int = 3,
+    analysis_file: Path | None = None,
+    design_file: Path | None = None,
 ) -> dict[str, Any]:
     modules = load_harness_modules(workspace_root)
     score = modules["score_frame_sequences"](
@@ -716,7 +718,12 @@ def score_candidate(
                 ffmpeg_path=ffmpeg_path,
             )
             score["motion_metrics"] = motion_metrics
-            topology = _score_motion_topology(reference, motion_metrics)
+            topology = _score_motion_topology(
+                reference,
+                motion_metrics,
+                analysis_file=analysis_file,
+                design_file=design_file,
+            )
             if topology is not None:
                 score["motion_topology"] = topology
             score["transition_diagnostics"]["worst_motion_pairs"] = sorted(
@@ -751,7 +758,12 @@ def score_candidate(
     return score
 
 
-def _score_motion_topology(reference: Path, motion_metrics: dict[str, Any]) -> dict[str, Any] | None:
+def _score_motion_topology(
+    reference: Path,
+    motion_metrics: dict[str, Any],
+    analysis_file: Path | None = None,
+    design_file: Path | None = None,
+) -> dict[str, Any] | None:
     diagnostics_file = reference.parent / "diagnostics" / "reference_motion_diagnostics.json"
     if not diagnostics_file.exists():
         return None
@@ -759,6 +771,14 @@ def _score_motion_topology(reference: Path, motion_metrics: dict[str, Any]) -> d
     contract = (diagnostics.get("summary") or {}).get("topology_contract")
     if not isinstance(contract, dict) or contract.get("status") != "required":
         return None
+    policy = _resolve_motion_topology_policy(analysis_file, design_file, contract)
+    if policy["mode"] == "disabled":
+        return {
+            "status": "not_applicable",
+            "reason": "motion topology is disabled for this transition structure",
+            "policy": policy,
+            "contract": contract,
+        }
     evidence = contract.get("evidence_pairs")
     pairs = motion_metrics.get("pairs")
     if not isinstance(evidence, list) or not isinstance(pairs, list):
@@ -789,9 +809,101 @@ def _score_motion_topology(reference: Path, motion_metrics: dict[str, Any]) -> d
         "evidence_pair_count": len(observed),
         "candidate_region_match_rate": region_match_rate,
         "direction_match_rate": direction_match_rate,
-        "enforcement": contract.get("enforcement", "advisory"),
-        "status": "satisfied" if region_match_rate >= 0.5 and direction_match_rate >= 0.5 else "structural_mismatch",
+        "enforcement": policy["mode"],
+        "policy": policy,
+        "status": (
+            "satisfied"
+            if region_match_rate >= policy["minimum_region_match_rate"]
+            and direction_match_rate >= policy["minimum_direction_match_rate"]
+            else "structural_mismatch"
+        ),
     }
+
+
+def _resolve_motion_topology_policy(
+    analysis_file: Path | None,
+    design_file: Path | None,
+    contract: dict[str, Any],
+) -> dict[str, Any]:
+    """Resolve whether motion topology is relevant to this candidate."""
+    for source_name, artifact_file in (("effect_design", design_file), ("transition_analysis", analysis_file)):
+        if artifact_file is None or not artifact_file.exists():
+            continue
+        try:
+            artifact = load_json(artifact_file)
+        except (OSError, ValueError):
+            continue
+        policy = artifact.get("evaluation_policy")
+        if not isinstance(policy, dict):
+            continue
+        topology = policy.get("motion_topology")
+        if isinstance(topology, dict):
+            resolved = _normalize_motion_topology_policy(topology, source_name)
+            if resolved is not None:
+                return resolved
+
+    if analysis_file is not None and analysis_file.exists():
+        try:
+            analysis = load_json(analysis_file)
+        except (OSError, ValueError):
+            analysis = {}
+        transition = analysis.get("transition") if isinstance(analysis, dict) else None
+        if isinstance(transition, dict):
+            region_count = transition.get("region_count")
+            structure = str(transition.get("structure_type", "")).casefold()
+            geometry = str(transition.get("split_geometry", "")).casefold()
+            axes = {
+                str(axis).casefold()
+                for axis in transition.get("motion_axes", [])
+                if isinstance(axis, str)
+            }
+            segmented = (
+                isinstance(region_count, int)
+                and region_count >= 2
+            ) or any(
+                marker in structure or marker in geometry
+                for marker in ("split", "band", "quadrant", "region", "mask")
+            )
+            if segmented:
+                return _normalize_motion_topology_policy(
+                    {"mode": "advisory"},
+                    "transition_analysis.inferred",
+                    inferred_axes=sorted(axes),
+                )
+            return _normalize_motion_topology_policy(
+                {"mode": "disabled"},
+                "transition_analysis.inferred",
+            )
+
+    return _normalize_motion_topology_policy(
+        {"mode": "disabled"},
+        "no_artifact_policy",
+    )
+
+
+def _normalize_motion_topology_policy(
+    policy: dict[str, Any],
+    source: str,
+    inferred_axes: list[str] | None = None,
+) -> dict[str, Any] | None:
+    mode = policy.get("mode")
+    if mode not in {"disabled", "advisory", "hard"}:
+        return None
+    region_threshold = policy.get("minimum_region_match_rate", 0.5)
+    direction_threshold = policy.get("minimum_direction_match_rate", 0.5)
+    if not isinstance(region_threshold, (int, float)) or not 0 <= region_threshold <= 1:
+        return None
+    if not isinstance(direction_threshold, (int, float)) or not 0 <= direction_threshold <= 1:
+        return None
+    result = {
+        "mode": mode,
+        "minimum_region_match_rate": float(region_threshold),
+        "minimum_direction_match_rate": float(direction_threshold),
+        "source": source,
+    }
+    if inferred_axes:
+        result["inferred_motion_axes"] = inferred_axes
+    return result
 
 
 def _build_windowed_score(
@@ -1009,6 +1121,12 @@ def evaluate_candidate(
             frame_start=frame_start,
             frame_end=frame_end,
             endpoint_frame_count=endpoint_frame_count,
+            analysis_file=Path(candidate["analysis_artifact"])
+            if isinstance(candidate.get("analysis_artifact"), str)
+            else None,
+            design_file=Path(candidate["design_artifact"])
+            if isinstance(candidate.get("design_artifact"), str)
+            else None,
         )
         render_job_definition = load_json(evaluation_job_file)
         render_settings = render_job_definition.get("render", {})

@@ -78,6 +78,19 @@ What to extract:
   - whether the current constrained grammar can support implementation
 - implementation notes only at a high level
 
+Evaluation policy:
+- Include `evaluation_policy.motion_topology` when the later regression scorer
+  needs a policy specific to this sample.
+- Use `mode: "disabled"` for effects whose visible behavior is not a persistent
+  multi-region directional layout, such as ordinary dissolve, scale, rotation,
+  or full-frame blur.
+- Use `mode: "advisory"` for a visible segmented or multi-direction structure
+  when flow evidence is useful but may fragment or vary across frames.
+- Use `mode: "hard"` only when the segmented topology is unambiguous, central to
+  the requested effect, and suitable as a strict acceptance requirement.
+- Optional match-rate thresholds must be justified by the visible structure;
+  otherwise omit them and let the local defaults apply.
+
 When reference motion diagnostics are provided, use them to check region count,
 per-region motion direction, approximate motion strength, onset/peak/settling,
 and low-confidence blur or occlusion areas. Do not assume a fixed number of

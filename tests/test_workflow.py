@@ -199,6 +199,20 @@ class WorkflowTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
+            analysis_file = root / "transition_structure.json"
+            analysis_file.write_text(
+                json.dumps(
+                    {
+                        "transition": {
+                            "structure_type": "horizontal band split",
+                            "region_count": 2,
+                            "motion_axes": ["horizontal", "opposed"],
+                            "split_geometry": "upper and lower bands",
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
             result = _score_motion_topology(
                 reference,
                 {
@@ -212,9 +226,110 @@ class WorkflowTests(unittest.TestCase):
                         }
                     ]
                 },
+                analysis_file=analysis_file,
             )
             self.assertEqual(result["status"], "structural_mismatch")
             self.assertEqual(result["candidate_region_match_rate"], 0.0)
+            self.assertEqual(result["enforcement"], "advisory")
+        finally:
+            for path in sorted(root.rglob("*"), reverse=True):
+                if path.is_file():
+                    path.unlink()
+                elif path.is_dir():
+                    path.rmdir()
+            root.rmdir()
+
+    def test_motion_topology_is_not_applicable_for_non_segmented_effect(self) -> None:
+        root = Path(__file__).resolve().parents[1] / "work" / f"topology_policy_{uuid.uuid4().hex}"
+        reference = root / "reference"
+        diagnostics = root / "diagnostics"
+        try:
+            diagnostics.mkdir(parents=True)
+            (diagnostics / "reference_motion_diagnostics.json").write_text(
+                json.dumps(
+                    {
+                        "summary": {
+                            "topology_contract": {
+                                "status": "required",
+                                "minimum_concurrent_regions": 2,
+                                "evidence_pairs": [{"from_frame": 4, "to_frame": 5}],
+                            }
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            analysis_file = root / "transition_structure.json"
+            analysis_file.write_text(
+                json.dumps(
+                    {
+                        "transition": {
+                            "structure_type": "dissolve",
+                            "region_count": 1,
+                            "motion_axes": [],
+                            "split_geometry": None,
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = _score_motion_topology(
+                reference,
+                {"pairs": [{"from_frame": 4, "to_frame": 5}]},
+                analysis_file=analysis_file,
+            )
+
+            self.assertEqual(result["status"], "not_applicable")
+            self.assertEqual(result["policy"]["mode"], "disabled")
+        finally:
+            for path in sorted(root.rglob("*"), reverse=True):
+                if path.is_file():
+                    path.unlink()
+                elif path.is_dir():
+                    path.rmdir()
+            root.rmdir()
+
+    def test_effect_design_policy_overrides_inferred_motion_topology(self) -> None:
+        root = Path(__file__).resolve().parents[1] / "work" / f"topology_policy_{uuid.uuid4().hex}"
+        reference = root / "reference"
+        diagnostics = root / "diagnostics"
+        try:
+            diagnostics.mkdir(parents=True)
+            (diagnostics / "reference_motion_diagnostics.json").write_text(
+                json.dumps(
+                    {
+                        "summary": {
+                            "topology_contract": {
+                                "status": "required",
+                                "minimum_concurrent_regions": 2,
+                                "evidence_pairs": [{"from_frame": 4, "to_frame": 5}],
+                            }
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            analysis_file = root / "transition_structure.json"
+            analysis_file.write_text(
+                json.dumps({"transition": {"structure_type": "horizontal band split", "region_count": 2}}),
+                encoding="utf-8",
+            )
+            design_file = root / "effect_design.json"
+            design_file.write_text(
+                json.dumps({"evaluation_policy": {"motion_topology": {"mode": "disabled"}}}),
+                encoding="utf-8",
+            )
+
+            result = _score_motion_topology(
+                reference,
+                {"pairs": [{"from_frame": 4, "to_frame": 5}]},
+                analysis_file=analysis_file,
+                design_file=design_file,
+            )
+
+            self.assertEqual(result["status"], "not_applicable")
+            self.assertEqual(result["policy"]["source"], "effect_design")
         finally:
             for path in sorted(root.rglob("*"), reverse=True):
                 if path.is_file():
