@@ -111,7 +111,10 @@ class WorkflowTests(unittest.TestCase):
                     {
                         "artifact_type": "reference_motion_diagnostics",
                         "pairs": [],
-                        "summary": {"topology_contract": {"status": "not_required"}},
+                        "summary": {
+                            "topology_contract": {"status": "not_required"},
+                            "motion_geometry": {"status": "needs_review"},
+                        },
                     }
                 ),
                 encoding="utf-8",
@@ -464,6 +467,29 @@ class WorkflowTests(unittest.TestCase):
         )
         self.assertEqual(priority["level"], "high")
         self.assertEqual(priority["recommended_categories"], ["regions", "displacement"])
+
+    def test_motion_refinement_priority_can_focus_on_geometry_mismatch(self) -> None:
+        priority = _motion_refinement_priority(
+            {
+                "history": [
+                    {
+                        "iteration": 3,
+                        "hypothesis_category": "blend",
+                        "metrics": {
+                            "motion_geometry": {
+                                "status": "geometry_mismatch",
+                                "rotation_delta_degrees": 18.0,
+                                "scale_delta_ratio": 0.22,
+                                "reference": {"confidence": 0.9},
+                                "candidate": {"confidence": 0.8},
+                            }
+                        },
+                    }
+                ]
+            }
+        )
+        self.assertEqual(priority["focus"], "motion_geometry")
+        self.assertEqual(priority["recommended_categories"], ["displacement", "regions", "shader_structure"])
 
     def test_progress_calibration_falls_back_when_endpoints_are_indistinct(self) -> None:
         calibration = _detect_progress_calibration(

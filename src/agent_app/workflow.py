@@ -263,6 +263,7 @@ def ensure_reference_diagnostics(
                 and isinstance(payload.get("pairs"), list)
                 and isinstance(payload.get("summary"), dict)
                 and isinstance(payload["summary"].get("topology_contract"), dict)
+                and isinstance(payload["summary"].get("motion_geometry"), dict)
             ):
                 return {
                     "status": "ready",
@@ -718,6 +719,9 @@ def score_candidate(
                 ffmpeg_path=ffmpeg_path,
             )
             score["motion_metrics"] = motion_metrics
+            geometry = _score_motion_geometry(reference, motion_metrics)
+            if geometry is not None:
+                score["motion_geometry"] = geometry
             topology = _score_motion_topology(
                 reference,
                 motion_metrics,
@@ -904,6 +908,41 @@ def _normalize_motion_topology_policy(
     if inferred_axes:
         result["inferred_motion_axes"] = inferred_axes
     return result
+
+
+def _score_motion_geometry(reference: Path, motion_metrics: dict[str, Any]) -> dict[str, Any] | None:
+    """Compare candidate transformation cues with the cached reference geometry."""
+    diagnostics_file = reference.parent / "diagnostics" / "reference_motion_diagnostics.json"
+    if not diagnostics_file.exists():
+        return None
+    diagnostics = load_json(diagnostics_file)
+    expected = (diagnostics.get("summary") or {}).get("motion_geometry")
+    candidate = motion_metrics.get("motion_geometry")
+    if not isinstance(expected, dict) or not isinstance(candidate, dict):
+        return None
+    if expected.get("status") != "estimated" or candidate.get("status") != "estimated":
+        return {
+            "status": "needs_review",
+            "reference": expected,
+            "candidate": candidate,
+        }
+
+    reference_rotation = float((expected.get("rotation_field") or {}).get("mean_degrees", 0.0))
+    candidate_rotation = float((candidate.get("rotation_field") or {}).get("mean_degrees", 0.0))
+    rotation_delta = abs((candidate_rotation - reference_rotation + 180.0) % 360.0 - 180.0)
+    reference_scale = float((expected.get("radial_scale_field") or {}).get("mean_ratio", 1.0))
+    candidate_scale = float((candidate.get("radial_scale_field") or {}).get("mean_ratio", 1.0))
+    scale_delta = abs(candidate_scale - reference_scale)
+    reference_flip = bool((expected.get("reflection_or_flip") or {}).get("detected", False))
+    candidate_flip = bool((candidate.get("reflection_or_flip") or {}).get("detected", False))
+    return {
+        "status": "satisfied" if rotation_delta <= 10.0 and scale_delta <= 0.15 and reference_flip == candidate_flip else "geometry_mismatch",
+        "reference": expected,
+        "candidate": candidate,
+        "rotation_delta_degrees": rotation_delta,
+        "scale_delta_ratio": scale_delta,
+        "reflection_agreement": reference_flip == candidate_flip,
+    }
 
 
 def _build_windowed_score(

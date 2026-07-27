@@ -636,6 +636,9 @@ def _metrics_from_report(report: dict[str, Any]) -> dict[str, Any]:
     topology = score.get("motion_topology")
     if isinstance(topology, dict):
         metrics["motion_topology"] = topology
+    geometry = score.get("motion_geometry")
+    if isinstance(geometry, dict):
+        metrics["motion_geometry"] = geometry
     return metrics
 
 
@@ -909,6 +912,22 @@ def _motion_refinement_priority(state: dict[str, Any]) -> dict[str, Any]:
             "topology": topology,
             "recommended_categories": ["shader_structure", "regions"],
         }
+    geometry = latest["metrics"].get("motion_geometry")
+    if isinstance(geometry, dict) and geometry.get("status") == "geometry_mismatch":
+        candidate = geometry.get("candidate") if isinstance(geometry.get("candidate"), dict) else {}
+        reference = geometry.get("reference") if isinstance(geometry.get("reference"), dict) else {}
+        confidence = min(
+            float(candidate.get("confidence", 0.0)),
+            float(reference.get("confidence", 0.0)),
+        )
+        if confidence >= 0.5:
+            return {
+                "level": "high",
+                "focus": "motion_geometry",
+                "reason": "reliable reference and candidate geometry estimates disagree",
+                "geometry": geometry,
+                "recommended_categories": ["displacement", "regions", "shader_structure"],
+            }
     if not isinstance(motion, dict):
         return {"level": "normal", "reason": "latest evaluation has no motion metrics"}
     coverage = motion.get("reliable_motion_coverage")
@@ -1018,6 +1037,15 @@ def _refinement_priority_instruction(priority: Any) -> str:
             f"but the candidate does not satisfy that contract across {evidence_count} evidence pairs "
             f"(region-topology match {region_match_rate:.3f}, direction match {direction_match_rate:.3f}). "
             "Implement a per-pixel motion field or spatial masks; do not continue tuning one global displacement vector."
+        )
+    if priority.get("focus") == "motion_geometry":
+        geometry = priority.get("geometry") if isinstance(priority.get("geometry"), dict) else {}
+        rotation_delta = geometry.get("rotation_delta_degrees", "unknown")
+        scale_delta = geometry.get("scale_delta_ratio", "unknown")
+        return (
+            "Current refinement priority: high motion geometry. The candidate and reference transformation estimates "
+            f"differ by {rotation_delta} degrees of rotation and {scale_delta} scale ratio. "
+            "Inspect rotation, scale, reflection, and spatial-displacement evidence before tuning blur or blend."
         )
     coverage = priority.get("reliable_motion_coverage")
     agreement = priority.get("direction_agreement")

@@ -16,6 +16,8 @@ Read:
 - the latest render report
 - the latest score report
 - `motion_metrics` and worst-motion-pair diagnostics when the score report includes them
+- `motion_geometry` comparison when the score report includes rotation, scale,
+  reflection, or spatial-displacement diagnostics
 - the latest candidate review MP4 when available
 - the latest optical-flow diagnostic MP4 when available
 - all source files under the candidate workspace
@@ -48,6 +50,9 @@ Motion-first triage:
   displacement direction, sign, and region geometry before tuning blur or
   blend. This rule applies to any motion axis or number of regions; do not
   assume horizontal bands, two regions, or four regions.
+- When `motion_geometry.status` is `geometry_mismatch` and both estimates have
+  good confidence, inspect the reported rotation, scale, reflection, and
+  displacement residuals before changing blur or blend.
 - Do not chase tiny optical-flow fragments as shader regions. The scorer ignores
   very small reference fragments and matches reliable regions by spatial overlap
   plus direction. If a reliable reference region has no matching candidate
