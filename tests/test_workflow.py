@@ -679,6 +679,45 @@ class WorkflowTests(unittest.TestCase):
                     path.rmdir()
             root.rmdir()
 
+    def test_sample_workspace_syncs_effect_catalog_once_when_workspace_root_is_provided(self) -> None:
+        root = Path(__file__).resolve().parents[1] / "work" / f"sample_catalog_sync_{uuid.uuid4().hex}"
+        source = root / "input.mp4"
+        try:
+            root.mkdir(parents=True)
+            source.write_bytes(b"video")
+            fake_modules = {
+                "sync_effect_catalog_sources": lambda workspace_root, source_manifest_path: {
+                    "manifest": {"catalog_type": "effect_catalog_sources", "registrations": []},
+                    "discovered_fx_ids": ["ModelGenerated\\Example_01"],
+                    "added_fx_ids": ["ModelGenerated\\Example_01"],
+                    "removed_fx_ids": [],
+                },
+                "build_effect_catalog": lambda workspace_root, source_manifest_path: {
+                    "catalog_type": "effect_catalog",
+                    "registration_count": 1,
+                },
+            }
+            with patch("agent_app.sample_workspace.load_harness_modules", return_value=fake_modules):
+                result = initialize_sample_workspace(
+                    root / "samples",
+                    "example_002",
+                    source,
+                    workspace_root=root,
+                )
+
+            self.assertEqual(result["catalog_sync"]["discovered_fx_count"], 1)
+            manifest = json.loads(Path(result["manifest_file"]).read_text(encoding="utf-8"))
+            self.assertEqual(manifest["catalog_sync"]["added_fx_ids"], ["ModelGenerated\\Example_01"])
+            self.assertTrue((root / "harness" / "configs" / "effect_catalog_sources.json").is_file())
+            self.assertTrue((root / "harness" / "configs" / "effect_catalog.json").is_file())
+        finally:
+            for path in sorted(root.rglob("*"), reverse=True):
+                if path.is_file():
+                    path.unlink()
+                elif path.is_dir():
+                    path.rmdir()
+            root.rmdir()
+
     def test_controller_tracks_baseline_and_evaluation_outcome(self) -> None:
         root = Path(__file__).resolve().parents[1] / "work" / f"controller_test_{uuid.uuid4().hex}"
         candidate_dir = root / "candidate"

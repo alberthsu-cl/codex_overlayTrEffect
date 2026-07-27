@@ -20,6 +20,7 @@ def load_harness_modules(workspace_root: Path):
         score_motion,
     )
     from overlay_harness.effect_catalog import build_effect_catalog
+    from overlay_harness.effect_catalog import sync_effect_catalog_sources
     from overlay_harness.effect_catalog import select_effect_candidate
     from overlay_harness.models import load_render_job
     from overlay_harness.renderer import prepare_render_invocation
@@ -36,5 +37,6 @@ def load_harness_modules(workspace_root: Path):
         "create_motion_visualizations": create_motion_visualizations,
         "analyze_reference_motion": analyze_reference_motion,
         "build_effect_catalog": build_effect_catalog,
+        "sync_effect_catalog_sources": sync_effect_catalog_sources,
         "select_effect_candidate": select_effect_candidate,
     }

@@ -51,6 +51,7 @@ def main(argv: list[str] | None = None) -> int:
                 else workspace_root / "agent" / "work" / "samples",
                 sample_id=args.sample_id,
                 source_video=Path(args.source_video).resolve(),
+                workspace_root=workspace_root,
             )
         elif args.command == "prepare":
             result = prepare_reference(

@@ -33,6 +33,12 @@ agent/work/samples/<sample-id>/
   reports/
 ```
 
+During `sample-init`, the harness synchronizes
+`harness/configs/effect_catalog_sources.json` and
+`harness/configs/effect_catalog.json` from the current `overlaytrengine`.
+Therefore roll back the target project before creating the new sample
+workspace. Existing sample workspaces are not resynchronized automatically.
+
 ## 2. Prepare Reference Frames
 
 `--target-frame-count` is the maximum normalized count, not a request for the
