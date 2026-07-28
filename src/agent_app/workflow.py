@@ -684,6 +684,8 @@ def score_candidate(
     endpoint_frame_count: int = 3,
     analysis_file: Path | None = None,
     design_file: Path | None = None,
+    source_files: list[Path] | None = None,
+    sampler_source: Path | None = None,
 ) -> dict[str, Any]:
     modules = load_harness_modules(workspace_root)
     score = modules["score_frame_sequences"](
@@ -697,6 +699,12 @@ def score_candidate(
     ).to_dict()
     score["candidate"] = str(candidate)
     score["reference"] = str(reference)
+    sampler_diagnostics = modules.get("analyze_sampler_repetition")
+    if sampler_diagnostics is not None and (source_files or sampler_source):
+        score["sampler_repetition"] = sampler_diagnostics(
+            source_files=source_files,
+            sampler_source=sampler_source,
+        )
     if frame_start is not None or frame_end is not None:
         score.update(
             _build_windowed_score(
@@ -1137,7 +1145,27 @@ def evaluate_candidate(
             check=False,
         )
         if build.returncode != 0:
-            raise RuntimeError(f"msbuild failed:\n{build.stdout}\n{build.stderr}")
+            repair_request, failure_file = _write_build_failure_repair_artifacts(
+                candidate_manifest_file=candidate_manifest_file,
+                candidate=candidate,
+                candidate_files=candidate_files,
+                backup_dir=backup_dir,
+                iteration=iteration,
+                stdout=build.stdout,
+                stderr=build.stderr,
+            )
+            # Keep the failed candidate sources for Codex to repair, but do not
+            # leave the registered target or production DLL in a broken state.
+            for target_path, backup_path in backups:
+                shutil.copyfile(backup_path, target_path)
+            if had_dll:
+                shutil.copyfile(dll_backup, dll_path)
+            raise RuntimeError(
+                "msbuild failed; target sources were restored. "
+                f"Codex repair request: {repair_request}\n"
+                f"Build failure report: {failure_file}\n"
+                f"{build.stdout}\n{build.stderr}"
+            )
         if not build_dll_path.exists():
             raise FileNotFoundError(f"candidate build did not produce plugin DLL: {build_dll_path}")
         shutil.copyfile(build_dll_path, dll_path)
@@ -1197,6 +1225,8 @@ def evaluate_candidate(
             design_file=Path(candidate.get("design_artifact") or planning.get("design_artifact"))
             if isinstance(candidate.get("design_artifact") or planning.get("design_artifact"), str)
             else None,
+            source_files=candidate_files,
+            sampler_source=target_files[0].parent / "FxBase.cpp",
         )
         render_settings = render_job_definition.get("render", {})
         fps = render_settings.get("fps", 30)
@@ -1256,6 +1286,65 @@ def evaluate_candidate(
                 shutil.copyfile(backup_path, target_path)
             if had_dll:
                 shutil.copyfile(dll_backup, dll_path)
+
+
+def _write_build_failure_repair_artifacts(
+    candidate_manifest_file: Path,
+    candidate: dict[str, Any],
+    candidate_files: list[Path],
+    backup_dir: Path,
+    iteration: int | None,
+    stdout: str,
+    stderr: str,
+) -> tuple[Path, Path]:
+    """Persist compiler evidence and a Codex-only repair request after a failed build."""
+    failure_dir = backup_dir / "build_failure"
+    failure_dir.mkdir(parents=True, exist_ok=True)
+    failure_file = failure_dir / "build_failure.json"
+    write_json(
+        failure_file,
+        {
+            "artifact_type": "candidate_build_failure",
+            "artifact_version": 1,
+            "iteration": iteration,
+            "effect_id": candidate.get("effect_id"),
+            "candidate_manifest": str(candidate_manifest_file),
+            "candidate_files": [str(path) for path in candidate_files],
+            "stdout_file": str(failure_dir / "msbuild.stdout.log"),
+            "stderr_file": str(failure_dir / "msbuild.stderr.log"),
+            "status": "build_failed",
+        },
+    )
+    (failure_dir / "msbuild.stdout.log").write_text(stdout or "", encoding="utf-8")
+    (failure_dir / "msbuild.stderr.log").write_text(stderr or "", encoding="utf-8")
+
+    candidate_dir = candidate_manifest_file.parent
+    packet_dir = candidate_dir / "packets"
+    packet_dir.mkdir(parents=True, exist_ok=True)
+    iteration_label = f"{int(iteration):03d}" if iteration is not None else "unknown"
+    request_file = packet_dir / f"iteration_{iteration_label}_build_repair_{backup_dir.name}.md"
+    request_file.write_text(
+        "\n".join(
+            [
+                "# Build Failure Repair",
+                "",
+                "Read:",
+                f"- {candidate_manifest_file}",
+                f"- {failure_file}",
+                f"- {failure_dir / 'msbuild.stdout.log'}",
+                f"- {failure_dir / 'msbuild.stderr.log'}",
+                *[f"- {path}" for path in candidate_files],
+                "",
+                "Edit only the candidate workspace represented by the manifest.",
+                "Fix compilation errors reported by MSBuild without changing the FX ID, class names, endpoint behavior, or candidate boundary.",
+                "Do not perform visual refinement or create a new iteration record.",
+                "The controller will rerun candidate-evaluate for the same iteration after this repair.",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    return request_file, failure_file
 
 
 def calibrate_candidate_progress(

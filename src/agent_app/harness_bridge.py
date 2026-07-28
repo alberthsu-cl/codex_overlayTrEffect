@@ -15,6 +15,7 @@ def load_harness_modules(workspace_root: Path):
 
     from overlay_harness.evaluator import (
         analyze_reference_motion,
+        analyze_sampler_repetition,
         create_motion_visualizations,
         score_frame_sequences,
         score_motion,
@@ -36,6 +37,7 @@ def load_harness_modules(workspace_root: Path):
         "score_motion": score_motion,
         "create_motion_visualizations": create_motion_visualizations,
         "analyze_reference_motion": analyze_reference_motion,
+        "analyze_sampler_repetition": analyze_sampler_repetition,
         "build_effect_catalog": build_effect_catalog,
         "sync_effect_catalog_sources": sync_effect_catalog_sources,
         "select_effect_candidate": select_effect_candidate,

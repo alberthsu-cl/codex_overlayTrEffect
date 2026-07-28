@@ -324,6 +324,17 @@ reference window, A/B sources, frame count, render job, effect ID, build error,
 or scoring configuration first. Those changes invalidate prior comparisons, so
 run a new baseline evaluation after they are corrected.
 
+### Build Failure Recovery
+
+If `candidate-evaluate` stops during MSBuild, the controller restores the
+registered target sources and DLL, keeps the failed candidate sources for
+repair, and writes a build-failure report plus a Codex repair request under the
+candidate's `packets/` and `backups/` folders. Read the newest
+`iteration_<N>_build_repair_*.md`, let Codex fix compilation only, then rerun
+`candidate-evaluate` for the same iteration with a new `--backup-dir`.
+Do not run `candidate-continue`, create a new phase, or skip to a new iteration
+until that same iteration builds and is evaluated.
+
 Create an iteration only when all of these are true:
 
 - reference frames and A/B sources are visually correct;

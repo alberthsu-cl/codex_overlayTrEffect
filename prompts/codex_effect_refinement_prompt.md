@@ -16,6 +16,9 @@ Read:
 - the latest render report
 - the latest score report
 - `motion_metrics` and worst-motion-pair diagnostics when the score report includes them
+- `sampler_repetition` diagnostics when present; treat them as advisory evidence
+  about wrap/mirror-capable samplers and modulo-like UV constructs, and inspect
+  the rendered comparison before changing endpoint behavior
 - `motion_geometry` comparison when the score report includes rotation, scale,
   reflection, or spatial-displacement diagnostics
 - `regional_motion` comparison when the score report includes continuous signed
