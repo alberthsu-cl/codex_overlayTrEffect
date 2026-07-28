@@ -13,7 +13,7 @@ D:\AI_Harness\agent\work\samples\YOUR_NEW_SAMPLE_ID
 
 Goal:
 Create one new ModelGenerated FX ID, establish a valid calibrated baseline, then
-run at most ten candidate refinement evaluations for that same FX ID.
+run at most three candidate refinement evaluations for that same FX ID.
 
 Process:
 
@@ -58,10 +58,10 @@ Process:
 
 8. Configure the candidate evaluation profile using only actual resolved paths,
    never literal documentation placeholders. Start a shader_refinement phase
-   with max-iterations 10 and max-rejected 5. Generate the first request with
+   with max-iterations 3 and max-rejected 3. Generate the first request with
    --evaluate-after-edit.
 
-9. For up to ten refinement iterations:
+9. For up to three refinement iterations:
    - read and follow the newest iteration_NNN_codex_request.md;
    - edit only that candidate workspace;
    - run its embedded candidate-evaluate command;
@@ -73,7 +73,7 @@ Process:
    blend. Keep the approach general; do not assume a fixed number of regions
    or a horizontal-only transition.
 
-Stop when ten refinement evaluations have completed, the controller reaches a
+Stop when three refinement evaluations have completed, the controller reaches a
 budget/block/failure state, or a required build/evaluation fails. Report the
 final FX ID, selected baseline iteration, final report path, and comparison
 video path.
