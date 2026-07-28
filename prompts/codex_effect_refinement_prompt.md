@@ -34,6 +34,10 @@ Rules:
 - compile-oriented C++ and HLSL must remain compatible with the existing project
 - make the smallest source change that addresses the observed mismatch
 - do not claim success without a later build, render, and score
+- if `candidate-evaluate` fails during the build, do not start a new phase or
+  skip the iteration; read the generated
+  `iteration_NNN_build_repair_*.md` request, repair the compilation issue, and
+  rerun the same iteration with a new backup directory
 - choose exactly one hypothesis category: timing, regions, displacement, blur,
   blend, shader_structure, or other
 - do not repeat a rejected hypothesis category without new visual evidence
