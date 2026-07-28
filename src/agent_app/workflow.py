@@ -722,6 +722,9 @@ def score_candidate(
             geometry = _score_motion_geometry(reference, motion_metrics)
             if geometry is not None:
                 score["motion_geometry"] = geometry
+            regional_motion = _score_regional_motion(reference, motion_metrics)
+            if regional_motion is not None:
+                score["regional_motion"] = regional_motion
             topology = _score_motion_topology(
                 reference,
                 motion_metrics,
@@ -945,6 +948,31 @@ def _score_motion_geometry(reference: Path, motion_metrics: dict[str, Any]) -> d
     }
 
 
+def _score_regional_motion(reference: Path, motion_metrics: dict[str, Any]) -> dict[str, Any] | None:
+    diagnostics_file = reference.parent / "diagnostics" / "reference_motion_diagnostics.json"
+    if not diagnostics_file.exists():
+        return None
+    diagnostics = load_json(diagnostics_file)
+    expected = (diagnostics.get("summary") or {}).get("regional_motion")
+    candidate = motion_metrics.get("regional_motion")
+    if not isinstance(expected, dict) or not isinstance(candidate, dict):
+        return None
+    if expected.get("status") != "estimated" or candidate.get("status") != "estimated":
+        return {"status": "needs_review", "reference": expected, "candidate": candidate}
+    expected_angle = float(expected.get("direction_degrees", 0.0))
+    candidate_angle = float(candidate.get("direction_degrees", 0.0))
+    angle_delta = abs((candidate_angle - expected_angle + 180.0) % 360.0 - 180.0)
+    expected_axis = expected.get("dominant_axis")
+    candidate_axis = candidate.get("dominant_axis")
+    return {
+        "status": "satisfied" if angle_delta <= 20.0 and expected_axis == candidate_axis else "direction_mismatch",
+        "reference": expected,
+        "candidate": candidate,
+        "direction_delta_degrees": angle_delta,
+        "axis_agreement": expected_axis == candidate_axis,
+    }
+
+
 def _build_windowed_score(
     score: dict[str, Any],
     frame_start: int | None,
@@ -1146,6 +1174,9 @@ def evaluate_candidate(
         if render_result.get("status") != "succeeded":
             raise RuntimeError(f"candidate render failed: {render_result.get('message')}")
         run_root = Path(render_result["workspace"])
+        render_job_definition = load_json(evaluation_job_file)
+        planning = render_job_definition.get("planning")
+        planning = planning if isinstance(planning, dict) else {}
         score_file = run_root / "reports" / "score.json"
         score_result = score_candidate(
             workspace_root=workspace_root,
@@ -1160,14 +1191,13 @@ def evaluate_candidate(
             frame_start=frame_start,
             frame_end=frame_end,
             endpoint_frame_count=endpoint_frame_count,
-            analysis_file=Path(candidate["analysis_artifact"])
-            if isinstance(candidate.get("analysis_artifact"), str)
+            analysis_file=Path(candidate.get("analysis_artifact") or planning.get("analysis_artifact"))
+            if isinstance(candidate.get("analysis_artifact") or planning.get("analysis_artifact"), str)
             else None,
-            design_file=Path(candidate["design_artifact"])
-            if isinstance(candidate.get("design_artifact"), str)
+            design_file=Path(candidate.get("design_artifact") or planning.get("design_artifact"))
+            if isinstance(candidate.get("design_artifact") or planning.get("design_artifact"), str)
             else None,
         )
-        render_job_definition = load_json(evaluation_job_file)
         render_settings = render_job_definition.get("render", {})
         fps = render_settings.get("fps", 30)
         if not isinstance(fps, int) or fps < 1:
@@ -1488,6 +1518,8 @@ def build_job_from_artifacts(
         frame_count=resolved_frame_count,
         progress_schedule=progress_schedule,
     )
+    job["planning"]["analysis_artifact"] = str(analysis_file.resolve())
+    job["planning"]["design_artifact"] = str(design_file.resolve())
     write_json(output_file, job)
     return job
 

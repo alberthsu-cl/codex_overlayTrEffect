@@ -78,6 +78,11 @@ diagnostics/reference_motion_diagnostics.mp4
 diagnostics/reference_motion_frames/
 ```
 
+The diagnostic also records continuous signed regional vectors, inferred
+dominant motion axis, and confidence-qualified transformation geometry. These
+measurements are generic evidence for all transition types; a non-motion effect
+may report them as unavailable or low confidence.
+
 ## 4. Ask Codex to Analyze the Sample
 
 Use:

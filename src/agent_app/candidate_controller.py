@@ -639,6 +639,9 @@ def _metrics_from_report(report: dict[str, Any]) -> dict[str, Any]:
     geometry = score.get("motion_geometry")
     if isinstance(geometry, dict):
         metrics["motion_geometry"] = geometry
+    regional_motion = score.get("regional_motion")
+    if isinstance(regional_motion, dict):
+        metrics["regional_motion"] = regional_motion
     return metrics
 
 
@@ -928,6 +931,15 @@ def _motion_refinement_priority(state: dict[str, Any]) -> dict[str, Any]:
                 "geometry": geometry,
                 "recommended_categories": ["displacement", "regions", "shader_structure"],
             }
+    regional_motion = latest["metrics"].get("regional_motion")
+    if isinstance(regional_motion, dict) and regional_motion.get("status") == "direction_mismatch":
+        return {
+            "level": "high",
+            "focus": "regional_direction",
+            "reason": "candidate regional motion axis or continuous direction disagrees with the reference",
+            "regional_motion": regional_motion,
+            "recommended_categories": ["displacement", "regions"],
+        }
     if not isinstance(motion, dict):
         return {"level": "normal", "reason": "latest evaluation has no motion metrics"}
     coverage = motion.get("reliable_motion_coverage")
@@ -1046,6 +1058,14 @@ def _refinement_priority_instruction(priority: Any) -> str:
             "Current refinement priority: high motion geometry. The candidate and reference transformation estimates "
             f"differ by {rotation_delta} degrees of rotation and {scale_delta} scale ratio. "
             "Inspect rotation, scale, reflection, and spatial-displacement evidence before tuning blur or blend."
+        )
+    if priority.get("focus") == "regional_direction":
+        regional = priority.get("regional_motion") if isinstance(priority.get("regional_motion"), dict) else {}
+        return (
+            "Current refinement priority: high regional direction. The candidate regional motion differs from the "
+            f"reference by {regional.get('direction_delta_degrees', 'unknown')} degrees and has axis agreement "
+            f"{regional.get('axis_agreement', 'unknown')}. Preserve continuous signed regional vectors; do not "
+            "replace them with fixed four- or eight-direction buckets."
         )
     coverage = priority.get("reliable_motion_coverage")
     agreement = priority.get("direction_agreement")

@@ -18,6 +18,8 @@ Read:
 - `motion_metrics` and worst-motion-pair diagnostics when the score report includes them
 - `motion_geometry` comparison when the score report includes rotation, scale,
   reflection, or spatial-displacement diagnostics
+- `regional_motion` comparison when the score report includes continuous signed
+  regional vectors and dominant-axis evidence
 - the latest candidate review MP4 when available
 - the latest optical-flow diagnostic MP4 when available
 - all source files under the candidate workspace
@@ -53,6 +55,9 @@ Motion-first triage:
 - When `motion_geometry.status` is `geometry_mismatch` and both estimates have
   good confidence, inspect the reported rotation, scale, reflection, and
   displacement residuals before changing blur or blend.
+- When `regional_motion.status` is `direction_mismatch`, use its continuous
+  signed vectors and axis agreement to correct displacement or region layout.
+  Do not reduce the evidence to fixed four- or eight-direction buckets.
 - Do not chase tiny optical-flow fragments as shader regions. The scorer ignores
   very small reference fragments and matches reliable regions by spatial overlap
   plus direction. If a reliable reference region has no matching candidate
