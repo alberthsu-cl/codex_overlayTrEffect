@@ -335,6 +335,32 @@ candidate's `packets/` and `backups/` folders. Read the newest
 Do not run `candidate-continue`, create a new phase, or skip to a new iteration
 until that same iteration builds and is evaluated.
 
+### Single-Session Refinement Loop
+
+The Python harness does not launch another Codex process. It prepares packets,
+evaluates renders, records controller state, and generates the next request.
+The current Codex session performs the shader edit and runs the commands in the
+request.
+
+For a new bounded refinement phase, run `candidate-resume` once. Then repeat
+the request/evaluate/continue sequence manually in the same Codex session:
+
+```powershell
+conda run -n harness python agent/src/main.py candidate-resume `
+  --manifest agent/work/samples/<sample-id>/candidates/<effect-name>/candidate_manifest.json `
+  --analysis agent/work/samples/<sample-id>/analysis/transition_structure.json `
+  --design agent/work/samples/<sample-id>/design/effect_design.json `
+  --phase shader_refinement_next `
+  --max-iterations 6 `
+  --max-rejected 3
+```
+
+`candidate-resume` only creates the first request. Give the newest
+`iteration_NNN_codex_request.md` to the current Codex session, let it edit the
+candidate, run its embedded `candidate-evaluate` command, read the outcome, and
+run `candidate-continue`. Continue with the next generated request. Never
+reuse a phase name.
+
 Create an iteration only when all of these are true:
 
 - reference frames and A/B sources are visually correct;

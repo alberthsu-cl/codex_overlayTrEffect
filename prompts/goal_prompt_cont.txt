@@ -6,29 +6,29 @@ D:\AI_Harness\agent\work\samples\ACTUAL_SAMPLE_ID\candidates\ACTUAL_EFFECT_NAME
 
 Run at most six additional evaluated iterations. Do not create another FX ID.
 
-1. Run this command once with the actual candidate paths and a new phase name:
+1. Run this command once with the actual candidate paths and a new, unused
+   phase name:
 
    ```powershell
    conda run -n harness python agent/src/main.py candidate-resume `
      --manifest "<candidate-root>/candidate_manifest.json" `
      --analysis "<sample-root>/analysis/transition_structure.json" `
      --design "<sample-root>/design/effect_design.json" `
-     --phase shader_refinement_2 `
+     --phase shader_refinement_next `
      --max-iterations 6 `
      --max-rejected 3
    ```
 
-   Use an unused phase name for a separate pass. `candidate-resume` verifies the canonical reference diagnostics, regenerates them when missing
-   or invalid, restores the selected baseline, closes the previous active phase,
-   starts the new phase, and creates the first request with evaluation enabled.
-2. For each iteration:
-   - follow the newest iteration_NNN_codex_request.md;
-   - edit only the candidate workspace;
-   - run the embedded candidate-evaluate command;
-   - run candidate-continue;
-   - use the next generated request.
-3. Stop after the configured additional evaluations, or on a build failure, evaluation
-   failure, controller block, or exhausted phase budget.
+   `candidate-resume` only prepares the first request. Do not stop there.
+2. For each generated request:
+   - Read the newest `iteration_NNN_codex_request.md` in the candidate packet folder.
+   - Edit only the candidate workspace in the current Codex session.
+   - Run the embedded `candidate-evaluate` command.
+   - Read the controller outcome.
+   - Run the embedded `candidate-continue` command after `accepted`, `rejected`,
+     or `tradeoff`, then follow the next request.
+3. Stop after the configured additional evaluations, or on a build failure,
+   evaluation failure, controller block, or exhausted phase budget.
 
 Keep endpoint behavior, the existing FX ID, and the candidate boundary intact.
 When reliable motion coverage is high but direction agreement is weak, prioritize

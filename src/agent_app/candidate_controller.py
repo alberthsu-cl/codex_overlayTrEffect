@@ -72,6 +72,12 @@ def start_refinement_phase(
         raise ValueError("phase name must use lowercase letters, digits, and underscores")
     if max_iterations < 1 or max_rejected < 1:
         raise ValueError("phase budgets must be positive")
+    state = _load_or_create_state(candidate_manifest_file)
+    if any(item.get("name") == name for item in state.get("phases", [])):
+        raise ValueError(
+            f"phase name already exists: {name!r}; use the existing request packet "
+            "for the active phase or choose a new phase name"
+        )
     baseline_result = set_candidate_baseline(
         candidate_manifest_file=candidate_manifest_file,
         iteration=baseline_iteration,

@@ -60,13 +60,18 @@ Process:
    never literal documentation placeholders. Start a shader_refinement phase
    with max-iterations 3 and max-rejected 3. Generate the first request with
    --evaluate-after-edit.
+   Do not stop after phase initialization; immediately follow the generated
+   first iteration request.
 
 9. For up to three refinement iterations:
    - read and follow the newest iteration_NNN_codex_request.md;
    - edit only that candidate workspace;
    - run its embedded candidate-evaluate command;
-   - run candidate-continue;
+   - after an accepted, rejected, or tradeoff outcome, run candidate-continue;
    - use the next generated request.
+   `candidate-continue` is mandatory after every completed evaluation unless
+   the phase is exhausted, blocked, or a build/evaluation failure requires the
+   generated repair request.
 
    Motion-first rule: when reliable motion coverage is high but direction
    agreement is weak, investigate regions or displacement before blur or

@@ -18,7 +18,14 @@ Read:
 - `motion_metrics` and worst-motion-pair diagnostics when the score report includes them
 - `sampler_repetition` diagnostics when present; treat them as advisory evidence
   about wrap/mirror-capable samplers and modulo-like UV constructs, and inspect
-  the rendered comparison before changing endpoint behavior
+  the rendered comparison before changing endpoint behavior. The shared
+  renderer sampler may be `MIRROR` even when the shader does not declare a
+  sampler. Trace transformed UVs at the displaced edges and choose an edge
+  policy from the visual evidence: clamp, wrap, mirror, explicit visibility,
+  or another effect-specific rule. If the reference does not repeat source
+  content, consider explicit shader-side clamping; if it does repeat content,
+  implement the required UV mapping explicitly rather than assuming the shared
+  sampler state is the intended effect.
 - `motion_geometry` comparison when the score report includes rotation, scale,
   reflection, or spatial-displacement diagnostics
 - `regional_motion` comparison when the score report includes continuous signed
