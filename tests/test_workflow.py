@@ -424,6 +424,21 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(analyze.call_args.kwargs["reference"], reference.resolve())
         self.assertEqual(analyze.call_args.kwargs["output_dir"], reference.resolve().parent / "diagnostics")
 
+    def test_reference_diagnostics_cli_rejects_noncanonical_output_directory(self) -> None:
+        reference = Path("D:/work/samples/example/reference")
+        with patch("builtins.print"), self.assertRaises(SystemExit) as error:
+            cli_main(
+                [
+                    "reference-diagnostics",
+                    "--reference",
+                    str(reference),
+                    "--output-dir",
+                    str(reference.parent / "analysis" / "diagnostics"),
+                ]
+            )
+
+        self.assertEqual(error.exception.code, 1)
+
     def test_reference_diagnostics_rejects_file_looking_output_directory(self) -> None:
         with self.assertRaisesRegex(ValueError, "must be a directory path"):
             from agent_app.workflow import analyze_reference_diagnostics

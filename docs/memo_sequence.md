@@ -64,11 +64,13 @@ Codex visual inspection or decide the transition window.
 
 ```powershell
 conda run -n harness python agent/src/main.py reference-diagnostics `
-  --reference agent/work/samples/<sample-id>/reference
+  --reference agent/work/samples/<sample-id>/reference `
+  --output-dir agent/work/samples/<sample-id>/diagnostics
 ```
 
-The command writes to `agent/work/samples/<sample-id>/diagnostics` by default.
-Use `--output-dir` only for an exceptional custom location.
+Always use the explicit `--output-dir` above. Diagnostics belong beside the
+prepared reference directory, at `agent/work/samples/<sample-id>/diagnostics`.
+Do not point it under the sample's `analysis/` directory.
 
 This produces:
 

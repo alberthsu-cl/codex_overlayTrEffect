@@ -83,12 +83,18 @@ def main(argv: list[str] | None = None) -> int:
             )
         elif args.command == "reference-diagnostics":
             reference_dir = Path(args.reference).resolve()
+            canonical_output_dir = reference_dir.parent / "diagnostics"
+            if args.output_dir:
+                requested_output_dir = Path(args.output_dir).resolve()
+                if requested_output_dir != canonical_output_dir:
+                    raise ValueError(
+                        "reference diagnostics must be written to the canonical folder beside "
+                        f"the reference directory: {canonical_output_dir}"
+                    )
             result = analyze_reference_diagnostics(
                 workspace_root=workspace_root,
                 reference=reference_dir,
-                output_dir=Path(args.output_dir).resolve()
-                if args.output_dir
-                else reference_dir.parent / "diagnostics",
+                output_dir=canonical_output_dir,
                 width=args.width,
                 height=args.height,
                 frame_start=args.frame_start,
@@ -402,7 +408,7 @@ def build_parser() -> argparse.ArgumentParser:
     reference_diagnostics.add_argument("--reference", required=True)
     reference_diagnostics.add_argument(
         "--output-dir",
-        help="defaults to the diagnostics folder beside the prepared reference directory",
+        help="must be the diagnostics folder beside the prepared reference directory",
     )
     reference_diagnostics.add_argument("--width", type=int, default=1920)
     reference_diagnostics.add_argument("--height", type=int, default=1080)
