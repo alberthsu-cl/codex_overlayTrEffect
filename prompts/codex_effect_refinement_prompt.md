@@ -84,6 +84,12 @@ Motion-first triage:
 - When region-layout agreement is broadly present but direction agreement is
   near zero, correct signed displacement and motion axis before changing region
   boundaries. A plausible mask with opposite motion is still the wrong effect.
+- For segmented planar motion, model regions first as a piecewise-linear
+  partition: one straight split line, or several straight lines. Choose each
+  line's orientation and position from evidence; do not assume horizontal or
+  vertical lines. Do not introduce curved, sinusoidal, or noise-distorted
+  boundaries unless the reference consistently shows that geometry across
+  multiple reliable frames and it materially improves the comparison.
 - Treat motion topology as advisory unless the packet explicitly says its
   enforcement is `hard`. Do not reshape a shader only to reproduce unstable
   or low-area optical-flow fragments.

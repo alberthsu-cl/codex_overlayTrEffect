@@ -1084,7 +1084,8 @@ def _refinement_priority_instruction(priority: Any) -> str:
             f"region layout across {evidence_count} reliable evidence pairs (region-topology match {region_match_rate:.3f}), "
             f"but its direction match is {direction_match_rate:.3f}. Correct each reliable region's signed displacement "
             "and motion axis before changing region boundaries, blur, blend, or sampler behavior. Use the per-pair "
-            "reference and candidate vectors in the report; do not replace continuous vectors with fixed direction buckets."
+            "reference and candidate vectors in the report; do not replace continuous vectors with fixed direction buckets. "
+            "For segmented motion, retain the simplest straight-line partition until repeated evidence requires a more complex boundary."
         )
     if priority.get("focus") == "motion_geometry":
         geometry = priority.get("geometry") if isinstance(priority.get("geometry"), dict) else {}
