@@ -309,13 +309,28 @@ def main(argv: list[str] | None = None) -> int:
                 evaluate_after_edit=args.evaluate_after_edit,
             )
         elif args.command == "candidate-continue":
+            manifest_file = Path(args.manifest).resolve()
+            state_file = manifest_file.parent / "candidate_state.json"
+            diagnostics = None
+            if state_file.is_file():
+                profile_state = json.loads(state_file.read_text(encoding="utf-8"))
+                profile = profile_state.get("evaluation_profile")
+                if isinstance(profile, dict):
+                    diagnostics = ensure_reference_diagnostics(
+                        workspace_root=workspace_root,
+                        reference=Path(str(profile["reference"])).resolve(),
+                        width=int(profile["width"]),
+                        height=int(profile["height"]),
+                    )
             result = continue_candidate_refinement(
-                candidate_manifest_file=Path(args.manifest).resolve(),
+                candidate_manifest_file=manifest_file,
                 analysis_file=Path(args.analysis).resolve(),
                 design_file=Path(args.design).resolve(),
                 max_iterations=args.max_iterations,
                 max_rejected=args.max_rejected,
             )
+            if diagnostics is not None:
+                result["diagnostics"] = diagnostics
         elif args.command == "candidate-status":
             result = candidate_status(Path(args.manifest).resolve())
         else:
