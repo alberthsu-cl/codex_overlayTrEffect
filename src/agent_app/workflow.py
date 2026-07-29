@@ -748,6 +748,25 @@ def score_candidate(
                 endpoint_frame_count=endpoint_frame_count,
             )
         )
+        # The default source mode intentionally uses video frame 0 and the
+        # final decoded frame.  A prepared reference may instead be a compact
+        # interior transition window, whose adjacent "stable" frames are not
+        # pixel-identical to those declared render endpoints.  Endpoint
+        # validation must therefore prove the shader reaches its configured
+        # A/B inputs, rather than accidentally reject a correct endpoint for
+        # a source-video timing difference.
+        if source_directories and len(source_directories) >= 2:
+            score["endpoint_checks"] = _build_source_endpoint_checks(
+                candidate=candidate,
+                source_a=source_directories[0],
+                source_b=source_directories[1],
+                width=width,
+                height=height,
+                frame_start=score["transition_window"]["frame_start"],
+                frame_end=score["transition_window"]["frame_end"],
+                endpoint_frame_count=endpoint_frame_count,
+                ffmpeg_path=ffmpeg_path,
+            )
         score["transition_diagnostics"] = _build_transition_diagnostics(score)
         edge_policy_analyzer = modules.get("analyze_edge_content_policy")
         if edge_policy_analyzer is not None and source_directories:
@@ -1087,6 +1106,59 @@ def _build_windowed_score(
     }
 
 
+def _build_source_endpoint_checks(
+    candidate: Path,
+    source_a: Path,
+    source_b: Path,
+    width: int,
+    height: int,
+    frame_start: int,
+    frame_end: int,
+    endpoint_frame_count: int,
+    ffmpeg_path: str | None,
+) -> dict[str, Any]:
+    """Score stable candidate edges against the job's declared A/B endpoints."""
+    from overlay_harness.evaluator import decode_frame_rgb, discover_frames, score_rgb_buffers
+
+    candidate_frames = discover_frames(candidate)
+    source_a_frames = discover_frames(source_a)
+    source_b_frames = discover_frames(source_b)
+    if not source_a_frames or not source_b_frames:
+        raise ValueError("source endpoint checks require non-empty source A and source B directories")
+    before_indexes = list(range(max(0, frame_start - endpoint_frame_count), frame_start))
+    after_indexes = list(range(frame_end + 1, min(len(candidate_frames), frame_end + 1 + endpoint_frame_count)))
+    ffmpeg_executable = ffmpeg_path or shutil.which("ffmpeg")
+
+    def aggregate(indexes: list[int], endpoint_frame: Path) -> dict[str, Any] | None:
+        if not indexes:
+            return None
+        endpoint_rgb = decode_frame_rgb(ffmpeg_executable, endpoint_frame, width, height)
+        frames = []
+        for index in indexes:
+            candidate_rgb = decode_frame_rgb(ffmpeg_executable, candidate_frames[index], width, height)
+            frame_score = score_rgb_buffers(candidate_rgb, endpoint_rgb, width, height)
+            frames.append(
+                {
+                    "candidate_frame": str(candidate_frames[index]),
+                    "reference_frame": str(endpoint_frame),
+                    "mse": frame_score["mse"],
+                    "mae": frame_score["mae"],
+                    "psnr_db": frame_score["psnr_db"],
+                    "ssim": frame_score["ssim"],
+                }
+            )
+        return _aggregate_frame_scores(frames)
+
+    return {
+        "requested_frame_count": endpoint_frame_count,
+        "reference_mode": "declared_render_sources",
+        "source_a": str(source_a),
+        "source_b": str(source_b),
+        "before_transition": aggregate(before_indexes, source_a_frames[0]),
+        "after_transition": aggregate(after_indexes, source_b_frames[0]),
+    }
+
+
 def _build_transition_diagnostics(score: dict[str, Any]) -> dict[str, Any]:
     window = score["transition_window"]
     frames = score["frames"]
@@ -1320,7 +1392,6 @@ def evaluate_candidate(
             frame_start=frame_start,
             frame_end=frame_end,
             ffmpeg_path=ffmpeg_path,
-            output_dir=output_dir / "edge_content_frames",
         )
         write_json(run_root / "reports" / "comparison_assets.json", comparison)
         report_file = run_root / "reports" / "candidate_iteration_report.json"
