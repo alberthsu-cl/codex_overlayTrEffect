@@ -240,9 +240,36 @@ def analyze_reference_diagnostics(
         else {"status": "skipped", "message": "ffmpeg was not found; PNG diagnostics remain available"}
     )
     result["video"] = video
+    source_directories = [reference.parent / "sources" / "source_a", reference.parent / "sources" / "source_b"]
+    edge_policy_analyzer = modules.get("analyze_edge_content_policy")
+    edge_policy = (
+        edge_policy_analyzer(
+            reference=reference,
+            source_directories=source_directories,
+            width=width,
+            height=height,
+            frame_start=frame_start,
+            frame_end=frame_end,
+            ffmpeg_path=ffmpeg_path,
+        )
+        if edge_policy_analyzer is not None and any(directory.is_dir() for directory in source_directories)
+        else {
+            "artifact_type": "edge_content_policy_diagnostics",
+            "status": "not_applicable",
+            "reason": "prepared source A/B directories are not available beside the reference",
+        }
+    )
+    edge_output_file = output_dir / "edge_content_diagnostics.json"
+    write_json(edge_output_file, edge_policy)
+    result["edge_content_policy"] = edge_policy
     output_file = output_dir / "reference_motion_diagnostics.json"
     write_json(output_file, result)
-    return {"status": "succeeded", "diagnostics": result, "output_file": str(output_file)}
+    return {
+        "status": "succeeded",
+        "diagnostics": result,
+        "output_file": str(output_file),
+        "edge_output_file": str(edge_output_file),
+    }
 
 
 def ensure_reference_diagnostics(
@@ -255,6 +282,9 @@ def ensure_reference_diagnostics(
     """Ensure canonical reference diagnostics exist before a refinement phase."""
     output_dir = reference.resolve().parent / "diagnostics"
     diagnostics_file = output_dir / "reference_motion_diagnostics.json"
+    edge_diagnostics_file = output_dir / "edge_content_diagnostics.json"
+    source_directories = [reference.parent / "sources" / "source_a", reference.parent / "sources" / "source_b"]
+    needs_edge_diagnostics = any(directory.is_dir() for directory in source_directories)
     if diagnostics_file.is_file():
         try:
             payload = load_json(diagnostics_file)
@@ -264,11 +294,13 @@ def ensure_reference_diagnostics(
                 and isinstance(payload.get("summary"), dict)
                 and isinstance(payload["summary"].get("topology_contract"), dict)
                 and isinstance(payload["summary"].get("motion_geometry"), dict)
+                and (not needs_edge_diagnostics or edge_diagnostics_file.is_file())
             ):
                 return {
                     "status": "ready",
                     "regenerated": False,
                     "output_file": str(diagnostics_file),
+                    "edge_output_file": str(edge_diagnostics_file) if edge_diagnostics_file.is_file() else None,
                 }
         except (OSError, ValueError):
             pass
@@ -285,6 +317,7 @@ def ensure_reference_diagnostics(
         "status": "ready",
         "regenerated": True,
         "output_file": result["output_file"],
+        "edge_output_file": result.get("edge_output_file"),
     }
 
 
@@ -686,6 +719,7 @@ def score_candidate(
     design_file: Path | None = None,
     source_files: list[Path] | None = None,
     sampler_source: Path | None = None,
+    source_directories: list[Path] | None = None,
 ) -> dict[str, Any]:
     modules = load_harness_modules(workspace_root)
     score = modules["score_frame_sequences"](
@@ -715,6 +749,22 @@ def score_candidate(
             )
         )
         score["transition_diagnostics"] = _build_transition_diagnostics(score)
+        edge_policy_analyzer = modules.get("analyze_edge_content_policy")
+        if edge_policy_analyzer is not None and source_directories:
+            reference_policy = edge_policy_analyzer(
+                reference=reference,
+                source_directories=source_directories,
+                width=width,
+                height=height,
+                frame_start=score["transition_window"]["frame_start"],
+                frame_end=score["transition_window"]["frame_end"],
+                ffmpeg_path=ffmpeg_path,
+                output_dir=candidate / "edge_content_diagnostics",
+            )
+            score["edge_content_policy"] = {
+                "reference": reference_policy,
+                "candidate": _candidate_edge_policy(score.get("sampler_repetition")),
+            }
         motion_scorer = modules.get("score_motion")
         if motion_scorer is not None:
             motion_metrics = motion_scorer(
@@ -771,6 +821,27 @@ def score_candidate(
     score["status"] = "succeeded"
     write_json(output_file, score)
     return score
+
+
+def _candidate_edge_policy(sampler_diagnostics: Any) -> dict[str, Any]:
+    """Describe only source-level candidate evidence; rendered behavior remains authoritative."""
+    if not isinstance(sampler_diagnostics, dict):
+        return {"policy": "unknown", "reason": "candidate sampler source was not available"}
+    if sampler_diagnostics.get("uv_wrapping_construct_count", 0):
+        return {
+            "policy": "repeat",
+            "reason": "candidate contains modulo-like UV mapping",
+            "confidence": "advisory",
+        }
+    modes = sampler_diagnostics.get("address_modes")
+    values = set(modes.values()) if isinstance(modes, dict) else set()
+    if len(values) == 1 and values.intersection({"CLAMP", "MIRROR", "WRAP", "BORDER"}):
+        return {
+            "policy": next(iter(values)).lower(),
+            "reason": "candidate relies on a shared sampler address mode",
+            "confidence": "advisory",
+        }
+    return {"policy": "unknown", "reason": "candidate edge policy is not explicit"}
 
 
 def _score_motion_topology(
@@ -1205,6 +1276,15 @@ def evaluate_candidate(
         render_job_definition = load_json(evaluation_job_file)
         planning = render_job_definition.get("planning")
         planning = planning if isinstance(planning, dict) else {}
+        inputs = render_job_definition.get("inputs")
+        inputs = inputs if isinstance(inputs, dict) else {}
+        source_directories = []
+        for key in ("source_a", "source_b"):
+            source = inputs.get(key)
+            if not isinstance(source, str):
+                continue
+            source_path = Path(source)
+            source_directories.append(source_path if source_path.is_absolute() else workspace_root / source_path)
         score_file = run_root / "reports" / "score.json"
         score_result = score_candidate(
             workspace_root=workspace_root,
@@ -1227,6 +1307,7 @@ def evaluate_candidate(
             else None,
             source_files=candidate_files,
             sampler_source=target_files[0].parent / "FxBase.cpp",
+            source_directories=source_directories,
         )
         render_settings = render_job_definition.get("render", {})
         fps = render_settings.get("fps", 30)
@@ -1239,6 +1320,7 @@ def evaluate_candidate(
             frame_start=frame_start,
             frame_end=frame_end,
             ffmpeg_path=ffmpeg_path,
+            output_dir=output_dir / "edge_content_frames",
         )
         write_json(run_root / "reports" / "comparison_assets.json", comparison)
         report_file = run_root / "reports" / "candidate_iteration_report.json"

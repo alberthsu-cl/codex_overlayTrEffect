@@ -26,6 +26,11 @@ Read:
   content, consider explicit shader-side clamping; if it does repeat content,
   implement the required UV mapping explicitly rather than assuming the shared
   sampler state is the intended effect.
+- `edge_content_policy` diagnostics when present. They compare reference
+  screen-edge content against prepared source A/B edge predictions. Use a
+  high-confidence result only after signed direction and line partitions are
+  aligned. When it disagrees with the candidate policy, choose `uv_mapping`
+  and make the UV policy explicit; otherwise leave sampler behavior alone.
 - `motion_geometry` comparison when the score report includes rotation, scale,
   reflection, or spatial-displacement diagnostics
 - `regional_motion` comparison when the score report includes continuous signed

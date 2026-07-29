@@ -18,6 +18,7 @@ HYPOTHESIS_CATEGORIES = (
     "blur",
     "blend",
     "shader_structure",
+    "uv_mapping",
     "other",
 )
 SSIM_IMPROVEMENT = 0.001
@@ -336,6 +337,7 @@ def build_next_iteration_packet(
     latest_comparison = _latest_comparison_video(candidate_dir / "evaluations")
     latest_motion = _latest_motion_video(candidate_dir / "evaluations")
     reference_diagnostics, reference_diagnostic_video = _reference_diagnostics(analysis_file)
+    reference_edge_diagnostics = _reference_edge_diagnostics(analysis_file)
     refinement_priority = _motion_refinement_priority(state)
     packet_file = candidate_dir / "packets" / f"iteration_{next_iteration:03d}_packet.json"
     prompt_file = candidate_dir / "packets" / f"iteration_{next_iteration:03d}_codex_request.md"
@@ -370,6 +372,7 @@ def build_next_iteration_packet(
         "latest_motion_video": str(latest_motion) if latest_motion else None,
         "reference_diagnostics_file": str(reference_diagnostics) if reference_diagnostics else None,
         "reference_diagnostics_video": str(reference_diagnostic_video) if reference_diagnostic_video else None,
+        "reference_edge_diagnostics_file": str(reference_edge_diagnostics) if reference_edge_diagnostics else None,
         "refinement_priority": refinement_priority,
         "baseline": state["baseline"],
         "history": state["history"],
@@ -648,6 +651,9 @@ def _metrics_from_report(report: dict[str, Any]) -> dict[str, Any]:
     regional_motion = score.get("regional_motion")
     if isinstance(regional_motion, dict):
         metrics["regional_motion"] = regional_motion
+    edge_content_policy = score.get("edge_content_policy")
+    if isinstance(edge_content_policy, dict):
+        metrics["edge_content_policy"] = edge_content_policy
     return metrics
 
 
@@ -899,6 +905,11 @@ def _reference_diagnostics(analysis_file: Path) -> tuple[Path | None, Path | Non
     return diagnostics_file, video_file if video_file and video_file.exists() else None
 
 
+def _reference_edge_diagnostics(analysis_file: Path) -> Path | None:
+    diagnostics_file = analysis_file.parent.parent / "diagnostics" / "edge_content_diagnostics.json"
+    return diagnostics_file if diagnostics_file.is_file() else None
+
+
 def _motion_refinement_priority(state: dict[str, Any]) -> dict[str, Any]:
     """Prioritize motion geometry only when its diagnostics are reliable."""
     scored = [
@@ -964,6 +975,28 @@ def _motion_refinement_priority(state: dict[str, Any]) -> dict[str, Any]:
             "regional_motion": regional_motion,
             "recommended_categories": ["displacement", "regions"],
         }
+    edge_content = latest["metrics"].get("edge_content_policy")
+    if isinstance(edge_content, dict):
+        reference_policy = edge_content.get("reference") if isinstance(edge_content.get("reference"), dict) else {}
+        candidate_policy = edge_content.get("candidate") if isinstance(edge_content.get("candidate"), dict) else {}
+        recommended = reference_policy.get("recommended_policy")
+        confidence = reference_policy.get("confidence")
+        observed = candidate_policy.get("policy")
+        if (
+            reference_policy.get("status") == "estimated"
+            and isinstance(recommended, str)
+            and recommended in {"clamp", "mirror", "repeat"}
+            and isinstance(confidence, (int, float))
+            and confidence >= 0.7
+            and recommended != observed
+        ):
+            return {
+                "level": "high",
+                "focus": "edge_content_policy",
+                "reason": "reliable source-edge evidence disagrees with the candidate UV edge policy",
+                "edge_content_policy": edge_content,
+                "recommended_categories": ["uv_mapping", "shader_structure"],
+            }
     if not isinstance(motion, dict):
         return {"level": "normal", "reason": "latest evaluation has no motion metrics"}
     coverage = motion.get("reliable_motion_coverage")
@@ -1042,6 +1075,7 @@ def _refinement_request(packet: dict[str, Any], candidate_dir: Path) -> str:
 - {packet['latest_motion_video'] or 'no previous motion diagnostic video'}
 - {packet['reference_diagnostics_file'] or 'no reference motion diagnostics'}
 - {packet['reference_diagnostics_video'] or 'no reference motion diagnostic video'}
+- {packet['reference_edge_diagnostics_file'] or 'no reference edge-content diagnostics'}
 
 Edit only:
 {candidate_dir}
@@ -1104,6 +1138,16 @@ def _refinement_priority_instruction(priority: Any) -> str:
             f"reference by {regional.get('direction_delta_degrees', 'unknown')} degrees and has axis agreement "
             f"{regional.get('axis_agreement', 'unknown')}. Preserve continuous signed regional vectors; do not "
             "replace them with fixed four- or eight-direction buckets."
+        )
+    if priority.get("focus") == "edge_content_policy":
+        edge_content = priority.get("edge_content_policy") if isinstance(priority.get("edge_content_policy"), dict) else {}
+        reference = edge_content.get("reference") if isinstance(edge_content.get("reference"), dict) else {}
+        candidate = edge_content.get("candidate") if isinstance(edge_content.get("candidate"), dict) else {}
+        return (
+            "Current refinement priority: high edge-content policy. Reference source-edge evidence supports "
+            f"`{reference.get('recommended_policy', 'unknown')}` with confidence {reference.get('confidence', 'unknown')}; "
+            f"the candidate currently appears to use `{candidate.get('policy', 'unknown')}`. Verify the rendered edge "
+            "evidence, then implement an explicit UV mapping policy. Do not change direction, line partitions, blur, or blend."
         )
     coverage = priority.get("reliable_motion_coverage")
     agreement = priority.get("direction_agreement")

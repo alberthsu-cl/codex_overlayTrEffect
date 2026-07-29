@@ -505,6 +505,30 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(priority["focus"], "signed_direction")
         self.assertEqual(priority["recommended_categories"], ["displacement", "regions", "shader_structure"])
 
+    def test_motion_refinement_priority_uses_uv_mapping_after_motion_is_aligned(self) -> None:
+        priority = _motion_refinement_priority(
+            {
+                "history": [
+                    {
+                        "iteration": 5,
+                        "hypothesis_category": "displacement",
+                        "metrics": {
+                            "edge_content_policy": {
+                                "reference": {
+                                    "status": "estimated",
+                                    "recommended_policy": "repeat",
+                                    "confidence": 0.82,
+                                },
+                                "candidate": {"policy": "mirror"},
+                            }
+                        },
+                    }
+                ]
+            }
+        )
+        self.assertEqual(priority["focus"], "edge_content_policy")
+        self.assertEqual(priority["recommended_categories"], ["uv_mapping", "shader_structure"])
+
     def test_motion_refinement_priority_can_focus_on_geometry_mismatch(self) -> None:
         priority = _motion_refinement_priority(
             {

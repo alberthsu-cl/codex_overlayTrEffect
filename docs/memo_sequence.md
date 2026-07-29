@@ -78,6 +78,8 @@ This produces:
 diagnostics/reference_motion_diagnostics.json
 diagnostics/reference_motion_diagnostics.mp4
 diagnostics/reference_motion_frames/
+diagnostics/edge_content_diagnostics.json
+diagnostics/edge_content_frames/
 ```
 
 The diagnostic also records continuous signed regional vectors, inferred
