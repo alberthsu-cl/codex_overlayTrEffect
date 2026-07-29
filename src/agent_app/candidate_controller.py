@@ -1072,7 +1072,8 @@ def _refinement_priority_instruction(priority: Any) -> str:
             "Current refinement priority: high motion topology. The reference requires multiple spatial direction groups, "
             f"but the candidate does not satisfy that contract across {evidence_count} evidence pairs "
             f"(region-topology match {region_match_rate:.3f}, direction match {direction_match_rate:.3f}). "
-            "Implement a per-pixel motion field or spatial masks; do not continue tuning one global displacement vector."
+            "First model the groups with signed displacement and straight-line partitions; use an arbitrary region mask "
+            "only when repeated reference evidence rules out a piecewise-linear partition."
         )
     if priority.get("focus") == "signed_direction":
         topology = priority.get("topology") if isinstance(priority.get("topology"), dict) else {}

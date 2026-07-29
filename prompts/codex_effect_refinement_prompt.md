@@ -90,6 +90,10 @@ Motion-first triage:
   vertical lines. Do not introduce curved, sinusoidal, or noise-distorted
   boundaries unless the reference consistently shows that geometry across
   multiple reliable frames and it materially improves the comparison.
+- Treat an arbitrary region mask as a later hypothesis, after signed motion
+  and straight-line partitions have been tested. A line test in the shader is
+  sufficient for a straight split; do not replace it with a free-form mask just
+  to fit noisy optical-flow fragments.
 - Treat motion topology as advisory unless the packet explicitly says its
   enforcement is `hard`. Do not reshape a shader only to reproduce unstable
   or low-area optical-flow fragments.
