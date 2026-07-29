@@ -1095,7 +1095,7 @@ def _evaluation_instruction(packet: dict[str, Any]) -> str:
 {continuation}
 ```
 
-The continuation command restores the selected baseline when required and creates the next Codex request. Stop after it returns; do not edit the next iteration."""
+The continuation command restores the selected baseline when required and creates the next Codex request. If the parent request asks for a bounded multi-iteration refinement run, read and execute that next request in the same Codex session. Otherwise, stop after the continuation command returns."""
     build_failure_instruction = f"""
 
 If `candidate-evaluate` fails during the build for iteration {packet['iteration']}, do not start a new phase or skip the iteration. Read the generated `iteration_{packet['iteration']:03d}_build_repair_*.md` request, repair the compilation issue in the candidate workspace, and rerun `candidate-evaluate` for iteration {packet['iteration']} using a new backup directory. The controller restores registered target files automatically; keep the existing FX ID."""

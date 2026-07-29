@@ -27,6 +27,8 @@ Run at most six additional evaluated iterations. Do not create another FX ID.
    - Read the controller outcome.
    - Run the embedded `candidate-continue` command after `accepted`, `rejected`,
      or `tradeoff`, then follow the next request.
+   - Continue this same request/evaluate/continue sequence until the configured
+     budget is exhausted or a stated stop condition occurs.
 3. Stop after the configured additional evaluations, or on a build failure,
    evaluation failure, controller block, or exhausted phase budget.
 
