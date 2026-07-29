@@ -914,6 +914,24 @@ def _motion_refinement_priority(state: dict[str, Any]) -> dict[str, Any]:
     motion = latest["metrics"].get("motion")
     topology = latest["metrics"].get("motion_topology")
     if isinstance(topology, dict) and topology.get("status") == "structural_mismatch":
+        evidence_count = topology.get("evidence_pair_count")
+        region_match_rate = topology.get("candidate_region_match_rate")
+        direction_match_rate = topology.get("direction_match_rate")
+        if (
+            isinstance(evidence_count, int)
+            and evidence_count >= 2
+            and isinstance(region_match_rate, (int, float))
+            and region_match_rate >= 0.5
+            and isinstance(direction_match_rate, (int, float))
+            and direction_match_rate <= 0.25
+        ):
+            return {
+                "level": "high",
+                "focus": "signed_direction",
+                "reason": "candidate broadly matches reference regions but fails their signed motion directions",
+                "topology": topology,
+                "recommended_categories": ["displacement", "regions", "shader_structure"],
+            }
         return {
             "level": "high",
             "focus": "motion_topology",
@@ -1055,6 +1073,18 @@ def _refinement_priority_instruction(priority: Any) -> str:
             f"but the candidate does not satisfy that contract across {evidence_count} evidence pairs "
             f"(region-topology match {region_match_rate:.3f}, direction match {direction_match_rate:.3f}). "
             "Implement a per-pixel motion field or spatial masks; do not continue tuning one global displacement vector."
+        )
+    if priority.get("focus") == "signed_direction":
+        topology = priority.get("topology") if isinstance(priority.get("topology"), dict) else {}
+        evidence_count = topology.get("evidence_pair_count", 0)
+        region_match_rate = topology.get("candidate_region_match_rate", 0.0)
+        direction_match_rate = topology.get("direction_match_rate", 0.0)
+        return (
+            "Current refinement priority: high signed direction. The candidate already broadly matches the reference "
+            f"region layout across {evidence_count} reliable evidence pairs (region-topology match {region_match_rate:.3f}), "
+            f"but its direction match is {direction_match_rate:.3f}. Correct each reliable region's signed displacement "
+            "and motion axis before changing region boundaries, blur, blend, or sampler behavior. Use the per-pair "
+            "reference and candidate vectors in the report; do not replace continuous vectors with fixed direction buckets."
         )
     if priority.get("focus") == "motion_geometry":
         geometry = priority.get("geometry") if isinstance(priority.get("geometry"), dict) else {}

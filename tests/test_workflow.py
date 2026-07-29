@@ -483,6 +483,28 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(priority["level"], "high")
         self.assertEqual(priority["recommended_categories"], ["regions", "displacement"])
 
+    def test_motion_refinement_priority_prefers_signed_direction_over_topology(self) -> None:
+        priority = _motion_refinement_priority(
+            {
+                "history": [
+                    {
+                        "iteration": 4,
+                        "hypothesis_category": "regions",
+                        "metrics": {
+                            "motion_topology": {
+                                "status": "structural_mismatch",
+                                "evidence_pair_count": 3,
+                                "candidate_region_match_rate": 2 / 3,
+                                "direction_match_rate": 0.0,
+                            }
+                        },
+                    }
+                ]
+            }
+        )
+        self.assertEqual(priority["focus"], "signed_direction")
+        self.assertEqual(priority["recommended_categories"], ["displacement", "regions", "shader_structure"])
+
     def test_motion_refinement_priority_can_focus_on_geometry_mismatch(self) -> None:
         priority = _motion_refinement_priority(
             {
