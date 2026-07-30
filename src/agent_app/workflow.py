@@ -1054,17 +1054,55 @@ def _score_motion_geometry(reference: Path, motion_metrics: dict[str, Any]) -> d
         reference_translation.get("mean_dy_pixels", 0.0)
     )
     translation_delta = (translation_dx * translation_dx + translation_dy * translation_dy) ** 0.5
+    reference_translation_magnitude = float(reference_translation.get("magnitude_pixels", 0.0))
+    candidate_translation_magnitude = float(candidate_translation.get("magnitude_pixels", 0.0))
+    translation_direction_agreement = True
+    if reference_translation_magnitude > 2.0 and candidate_translation_magnitude > 2.0:
+        reference_vector = (
+            float(reference_translation.get("mean_dx_pixels", 0.0)),
+            float(reference_translation.get("mean_dy_pixels", 0.0)),
+        )
+        candidate_vector = (
+            float(candidate_translation.get("mean_dx_pixels", 0.0)),
+            float(candidate_translation.get("mean_dy_pixels", 0.0)),
+        )
+        translation_direction_agreement = (
+            reference_vector[0] * candidate_vector[0]
+            + reference_vector[1] * candidate_vector[1]
+            > 0.0
+        )
     reference_flip = bool((expected.get("reflection_or_flip") or {}).get("detected", False))
     candidate_flip = bool((candidate.get("reflection_or_flip") or {}).get("detected", False))
+    rotation_direction_agreement = True
+    if abs(reference_rotation) > 1.0 and abs(candidate_rotation) > 1.0:
+        rotation_direction_agreement = reference_rotation * candidate_rotation > 0.0
+    geometry_components = [
+        max(0.0, 1.0 - rotation_delta / 30.0),
+        max(0.0, 1.0 - translation_delta / 20.0),
+        max(0.0, 1.0 - scale_delta / 0.30),
+        1.0 if reference_flip == candidate_flip else 0.0,
+    ]
+    geometry_similarity = sum(geometry_components) / len(geometry_components)
+    geometry_mismatch = (
+        rotation_delta > 10.0
+        or not rotation_direction_agreement
+        or translation_delta > 6.0
+        or not translation_direction_agreement
+        or scale_delta > 0.15
+        or reference_flip != candidate_flip
+    )
     return {
-        "status": "satisfied" if rotation_delta <= 10.0 and scale_delta <= 0.15 and reference_flip == candidate_flip else "geometry_mismatch",
+        "status": "geometry_mismatch" if geometry_mismatch else "satisfied",
         "reference": expected,
         "candidate": candidate,
         "rotation_delta_degrees": rotation_delta,
+        "rotation_direction_agreement": rotation_direction_agreement,
         "scale_delta_ratio": scale_delta,
         "translation_delta_pixels": translation_delta,
         "translation_delta_dx_pixels": translation_dx,
         "translation_delta_dy_pixels": translation_dy,
+        "translation_direction_agreement": translation_direction_agreement,
+        "geometry_similarity": geometry_similarity,
         "reflection_agreement": reference_flip == candidate_flip,
     }
 

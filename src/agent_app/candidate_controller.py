@@ -1340,6 +1340,19 @@ def _motion_refinement_priority(state: dict[str, Any]) -> dict[str, Any]:
             float(reference.get("confidence", 0.0)),
         )
         if confidence >= 0.5:
+            translation_delta = geometry.get("translation_delta_pixels")
+            translation_direction = geometry.get("translation_direction_agreement")
+            if (
+                isinstance(translation_delta, (int, float))
+                and translation_delta > 6.0
+            ) or translation_direction is False:
+                return {
+                    "level": "high",
+                    "focus": "transform_position",
+                    "reason": "reliable geometry shows incorrect transform position or translation direction",
+                    "geometry": geometry,
+                    "recommended_categories": ["displacement", "shader_structure"],
+                }
             return {
                 "level": "high",
                 "focus": "motion_geometry",
@@ -1522,6 +1535,15 @@ def _refinement_priority_instruction(priority: Any) -> str:
             "Current refinement priority: high motion geometry. The candidate and reference transformation estimates "
             f"differ by {rotation_delta} degrees of rotation and {scale_delta} scale ratio. "
             "Inspect rotation, scale, reflection, and spatial-displacement evidence before tuning blur or blend."
+        )
+    if priority.get("focus") == "transform_position":
+        geometry = priority.get("geometry") if isinstance(priority.get("geometry"), dict) else {}
+        return (
+            "Current refinement priority: transform position. The candidate's translation error is "
+            f"{geometry.get('translation_delta_pixels', 'unknown')} pixels. Inspect the transform pivot, signed "
+            "translation vector, and per-region origins. Use `displacement` when the transform structure exists; "
+            "use `shader_structure` only when the pivot/translation model is missing. Do not spend this iteration "
+            "on timing, blur, or blend."
         )
     if priority.get("focus") == "angular_direction":
         angular = priority.get("angular_motion") if isinstance(priority.get("angular_motion"), dict) else {}

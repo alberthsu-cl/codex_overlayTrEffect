@@ -609,6 +609,27 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(priority["focus"], "motion_geometry")
         self.assertEqual(priority["recommended_categories"], ["displacement", "regions", "shader_structure"])
 
+    def test_motion_refinement_priority_focuses_on_transform_position(self) -> None:
+        priority = _motion_refinement_priority(
+            {
+                "history": [{
+                    "iteration": 3,
+                    "hypothesis_category": "timing",
+                    "metrics": {
+                        "motion_geometry": {
+                            "status": "geometry_mismatch",
+                            "translation_delta_pixels": 14.0,
+                            "translation_direction_agreement": False,
+                            "reference": {"confidence": 0.9},
+                            "candidate": {"confidence": 0.8},
+                        }
+                    },
+                }]
+            }
+        )
+        self.assertEqual(priority["focus"], "transform_position")
+        self.assertEqual(priority["recommended_categories"], ["displacement", "shader_structure"])
+
     def test_progress_calibration_falls_back_when_endpoints_are_indistinct(self) -> None:
         calibration = _detect_progress_calibration(
             mae_to_a=[0.0, 0.2, 0.4],
