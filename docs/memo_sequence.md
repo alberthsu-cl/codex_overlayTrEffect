@@ -280,6 +280,23 @@ result should remain available in `OverlayTrTool` for visual inspection.
 
 ## 9. Review and Decide
 
+### Reassess Existing Iterations
+
+When an iteration looks better in the comparison video but was recorded as a
+`tradeoff`, preview the historical decisions under the current effect-specific
+selection policy before starting another phase:
+
+```powershell
+conda run -n harness python agent/src/main.py candidate-reassess `
+  --manifest "$candidateRoot/candidate_manifest.json"
+```
+
+This command is read-only. It keeps endpoint checks hard, derives or reads the
+policy from the analysis/design artifacts, and reports the recommended baseline
+iteration without changing candidate files, controller state, or registrations.
+For rotation, scale, perspective-card, and flip effects, image error and peak
+window error are primary; SSIM and optical-flow similarity are advisory.
+
 Review these generated artifacts after each candidate evaluation:
 
 - `rendered_transition.mp4`

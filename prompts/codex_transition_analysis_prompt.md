@@ -79,6 +79,17 @@ What to extract:
 - implementation notes only at a high level
 
 Evaluation policy:
+- Include `evaluation_policy.selection` when the reference makes some metrics
+  diagnostically misleading. Classify metrics as `primary_metrics`,
+  `guardrail_metrics`, or `advisory_metrics` using only these names: `mse`,
+  `mae`, `ssim`, `motion_similarity`, `peak_mse`, `peak_ssim`.
+- For a single full-frame rotation, scale, perspective-card, or flip effect,
+  use a transform-oriented policy: `mse`, `mae`, and `peak_mse` primary;
+  SSIM and dense-flow similarity advisory. Keep endpoint checks outside this
+  policy: they are always hard local checks.
+- For ordinary dissolves or stable spatial transitions, retain SSIM as a
+  primary or guardrail metric. Do not mark motion as a guardrail solely because
+  dense flow is available.
 - Include `evaluation_policy.motion_topology` when the later regression scorer
   needs a policy specific to this sample.
 - Use `mode: "disabled"` for effects whose visible behavior is not a persistent

@@ -102,6 +102,27 @@
               "maximum": 1
             }
           }
+        },
+        "selection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["primary_metrics"],
+          "properties": {
+            "profile": {"type": "string"},
+            "primary_metrics": {
+              "type": "array",
+              "minItems": 1,
+              "items": {"type": "string", "enum": ["mse", "mae", "ssim", "motion_similarity", "peak_mse", "peak_ssim"]}
+            },
+            "guardrail_metrics": {
+              "type": "array",
+              "items": {"type": "string", "enum": ["mse", "mae", "ssim", "motion_similarity", "peak_mse", "peak_ssim"]}
+            },
+            "advisory_metrics": {
+              "type": "array",
+              "items": {"type": "string", "enum": ["mse", "mae", "ssim", "motion_similarity", "peak_mse", "peak_ssim"]}
+            }
+          }
         }
       }
     },

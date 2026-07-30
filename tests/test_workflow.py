@@ -34,6 +34,7 @@ from agent_app.candidate_controller import (
     _endpoints_are_exact,
     _motion_refinement_priority,
     _select_outcome,
+    _select_outcome_with_decision,
     build_next_iteration_packet,
     human_accept_candidate,
     continue_candidate_refinement,
@@ -52,6 +53,39 @@ from agent_app.codegen import (
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_transform_selection_accepts_image_error_improvement_without_flow_guardrails(self) -> None:
+        baseline = {
+            "iteration": 0,
+            "metrics": {
+                "mse": 100.0,
+                "mae": 10.0,
+                "ssim": 0.50,
+                "endpoint_checks": {
+                    "before_transition": {"mse": 0.0, "ssim": 1.0},
+                    "after_transition": {"mse": 0.0, "ssim": 1.0},
+                },
+                "motion": {"motion_similarity": 0.70},
+            },
+        }
+        candidate = {
+            "mse": 80.0,
+            "mae": 8.0,
+            "ssim": 0.40,
+            "endpoint_checks": baseline["metrics"]["endpoint_checks"],
+            "motion": {"motion_similarity": 0.50},
+        }
+        policy = {
+            "profile": "transform",
+            "source": "test",
+            "primary_metrics": ["mse", "mae", "peak_mse"],
+            "guardrail_metrics": [],
+            "advisory_metrics": ["ssim", "motion_similarity"],
+        }
+        outcome, _, decision = _select_outcome_with_decision(baseline, candidate, policy)
+        self.assertEqual(outcome, "accepted")
+        self.assertEqual(decision["materially_improved_primary_metrics"], ["mse", "mae"])
+        self.assertEqual(decision["guardrail_failures"], [])
+
     def test_candidate_evaluation_run_name_uses_iteration_record_stem(self) -> None:
         root = Path(__file__).resolve().parents[1] / "work" / f"evaluation_name_{uuid.uuid4().hex}"
         candidate_dir = root / "candidate"

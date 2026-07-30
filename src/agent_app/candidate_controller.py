@@ -29,6 +29,15 @@ MOTION_SIMILARITY_IMPROVEMENT = 0.02
 MOTION_SIMILARITY_REGRESSION_TOLERANCE = 0.03
 ENDPOINT_MSE_TOLERANCE = 1.0
 ENDPOINT_SSIM_TOLERANCE = 0.999
+SELECTION_METRICS = (
+    "mse",
+    "mae",
+    "ssim",
+    "motion_similarity",
+    "peak_mse",
+    "peak_ssim",
+)
+LOWER_IS_BETTER_METRICS = {"mse", "mae", "peak_mse"}
 
 
 def set_candidate_baseline(
@@ -52,6 +61,7 @@ def set_candidate_baseline(
         "metrics": metrics,
         "source_snapshot": str(snapshot_dir),
         "selected_at": _timestamp(),
+        "selection_policy": _resolve_selection_policy(candidate_manifest_file),
     }
     _upsert_history(state, iteration, "baseline", "accepted", metrics, str(report_file))
     _upsert_shortlist(state, iteration, "accepted", metrics, str(report_file))
@@ -494,10 +504,14 @@ def record_candidate_evaluation(
             f"iteration {iteration} must declare hypothesis_category from: {', '.join(HYPOTHESIS_CATEGORIES)}"
         )
     metrics = _metrics_from_report(load_json(report_file))
-    outcome, reason = _select_outcome(state.get("baseline"), metrics)
+    selection_policy = _resolve_selection_policy(candidate_manifest_file)
+    outcome, reason, decision = _select_outcome_with_decision(
+        state.get("baseline"), metrics, selection_policy
+    )
     record["evaluation"] = metrics
     record["status"] = outcome
     record["reason"] = reason
+    record["selection_decision"] = decision
     write_json(iteration_file, record)
     _upsert_history(state, iteration, category, outcome, metrics, str(report_file))
     if outcome in {"accepted", "tradeoff"}:
@@ -514,10 +528,17 @@ def record_candidate_evaluation(
             "metrics": metrics,
             "source_snapshot": str(snapshot_dir),
             "selected_at": _timestamp(),
+            "selection_policy": selection_policy,
         }
     _refresh_rejected_budget(state)
     _write_state(candidate_manifest_file, state)
-    return {"status": outcome, "reason": reason, "state_file": str(_state_file(candidate_manifest_file))}
+    return {
+        "status": outcome,
+        "reason": reason,
+        "selection_policy": selection_policy,
+        "selection_decision": decision,
+        "state_file": str(_state_file(candidate_manifest_file)),
+    }
 
 
 def candidate_status(candidate_manifest_file: Path) -> dict[str, Any]:
@@ -539,6 +560,43 @@ def candidate_status(candidate_manifest_file: Path) -> dict[str, Any]:
             int(_active_phase(state)["first_iteration"]) if _active_phase(state) else None,
         ),
         "last_packet": state.get("last_packet"),
+    }
+
+
+def reassess_candidate_history(candidate_manifest_file: Path) -> dict[str, Any]:
+    """Preview baseline choices under the current policy without changing candidate files or state."""
+    state = _load_or_create_state(candidate_manifest_file)
+    baseline = state.get("baseline")
+    if not isinstance(baseline, dict):
+        raise ValueError("candidate has no selected baseline")
+    policy = _resolve_selection_policy(candidate_manifest_file)
+    prospective = {"iteration": baseline["iteration"], "metrics": baseline["metrics"]}
+    entries: list[dict[str, Any]] = []
+    for item in sorted(state.get("history", []), key=lambda value: int(value.get("iteration", -1))):
+        if item.get("hypothesis_category") == "baseline":
+            continue
+        report_name = item.get("report_file")
+        if not isinstance(report_name, str) or not Path(report_name).is_file():
+            continue
+        metrics = _metrics_from_report(load_json(Path(report_name)))
+        outcome, reason, decision = _select_outcome_with_decision(prospective, metrics, policy)
+        entry = {
+            "iteration": item.get("iteration"),
+            "recorded_status": item.get("status"),
+            "reassessed_status": outcome,
+            "reason": reason,
+            "selection_decision": decision,
+        }
+        entries.append(entry)
+        if outcome == "accepted":
+            prospective = {"iteration": item["iteration"], "metrics": metrics}
+    return {
+        "status": "succeeded",
+        "mode": "preview_only",
+        "selection_policy": policy,
+        "starting_baseline_iteration": baseline["iteration"],
+        "recommended_baseline_iteration": prospective["iteration"],
+        "iterations": entries,
     }
 
 
@@ -654,6 +712,15 @@ def _metrics_from_report(report: dict[str, Any]) -> dict[str, Any]:
     edge_content_policy = score.get("edge_content_policy")
     if isinstance(edge_content_policy, dict):
         metrics["edge_content_policy"] = edge_content_policy
+    phase_scores = score.get("phase_scores")
+    if isinstance(phase_scores, dict):
+        metrics["phase_scores"] = phase_scores
+        peak = phase_scores.get("peak")
+        if isinstance(peak, dict):
+            for metric in ("mse", "ssim"):
+                value = peak.get(metric)
+                if isinstance(value, (int, float)):
+                    metrics[f"peak_{metric}"] = float(value)
     return metrics
 
 
@@ -681,46 +748,188 @@ def _endpoints_are_exact(metrics: dict[str, Any]) -> bool:
 
 
 def _select_outcome(baseline: dict[str, Any] | None, metrics: dict[str, Any]) -> tuple[str, str]:
+    outcome, reason, _ = _select_outcome_with_decision(baseline, metrics, _legacy_selection_policy())
+    return outcome, reason
+
+
+def _select_outcome_with_decision(
+    baseline: dict[str, Any] | None,
+    metrics: dict[str, Any],
+    selection_policy: dict[str, Any],
+) -> tuple[str, str, dict[str, Any]]:
     if not _endpoints_are_exact(metrics):
-        return "rejected", "endpoint checks exceed stable-frame tolerance"
+        return "rejected", "endpoint checks exceed stable-frame tolerance", {
+            "policy": selection_policy,
+            "endpoint_checks": "failed",
+        }
     topology = metrics.get("motion_topology")
     if (
         isinstance(topology, dict)
         and topology.get("status") == "structural_mismatch"
         and topology.get("enforcement") == "hard"
     ):
-        return "rejected", "candidate violates the required reference motion topology"
+        return "rejected", "candidate violates the required reference motion topology", {
+            "policy": selection_policy,
+            "endpoint_checks": "passed",
+            "topology": "hard_mismatch",
+        }
     if baseline is None:
-        return "accepted", "first valid evaluation becomes the baseline"
+        return "accepted", "first valid evaluation becomes the baseline", {
+            "policy": selection_policy,
+            "endpoint_checks": "passed",
+            "comparison": "initial_baseline",
+        }
     previous = baseline["metrics"]
-    ssim_delta = metrics["ssim"] - previous["ssim"]
-    mse_change = (metrics["mse"] - previous["mse"]) / previous["mse"]
-    motion_delta = _motion_delta(metrics, previous)
-
-    materially_improved = (
-        ssim_delta >= SSIM_IMPROVEMENT
-        or mse_change <= -MSE_IMPROVEMENT_RATIO
-        or (motion_delta is not None and motion_delta >= MOTION_SIMILARITY_IMPROVEMENT)
-    )
-    within_guardrails = (
-        ssim_delta >= -SSIM_REGRESSION_TOLERANCE
-        and mse_change <= MSE_REGRESSION_TOLERANCE
-        and (
-            motion_delta is None
-            or motion_delta >= -MOTION_SIMILARITY_REGRESSION_TOLERANCE
-        )
-    )
-    if materially_improved and within_guardrails:
-        return "accepted", "improved a primary image or motion metric within Pareto guardrails"
-
-    any_improved = (
-        ssim_delta > 0
-        or mse_change < 0
-        or (motion_delta is not None and motion_delta > 0)
-    )
+    deltas = _selection_deltas(metrics, previous)
+    primary = [metric for metric in selection_policy["primary_metrics"] if metric in deltas]
+    guardrails = [metric for metric in selection_policy["guardrail_metrics"] if metric in deltas]
+    improved = [metric for metric in primary if deltas[metric]["materially_improved"]]
+    guardrail_failures = [metric for metric in guardrails if deltas[metric]["regressed_beyond_guardrail"]]
+    decision = {
+        "policy": selection_policy,
+        "endpoint_checks": "passed",
+        "baseline_iteration": baseline.get("iteration"),
+        "metric_deltas": deltas,
+        "primary_metrics_available": primary,
+        "materially_improved_primary_metrics": improved,
+        "guardrail_failures": guardrail_failures,
+    }
+    if improved and not guardrail_failures:
+        return "accepted", "improved a policy-primary metric within configured guardrails", decision
+    any_improved = [metric for metric, value in deltas.items() if value["improved"]]
     if any_improved:
-        return "tradeoff", "one image or motion metric improved while another regressed"
-    return "rejected", "image and motion metrics regressed against the accepted baseline"
+        decision["improved_metrics"] = any_improved
+        if guardrail_failures:
+            return "tradeoff", "primary or advisory metrics improved but a policy guardrail regressed", decision
+        return "tradeoff", "only advisory metrics improved or no primary improvement met the policy threshold", decision
+    return "rejected", "no policy-primary or advisory metric improved against the accepted baseline", decision
+
+
+def _selection_deltas(metrics: dict[str, Any], previous: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    deltas: dict[str, dict[str, Any]] = {}
+    for metric in SELECTION_METRICS:
+        current = _selection_metric_value(metrics, metric)
+        baseline = _selection_metric_value(previous, metric)
+        if not isinstance(current, (int, float)) or not isinstance(baseline, (int, float)):
+            continue
+        if metric in LOWER_IS_BETTER_METRICS:
+            relative = (float(current) - float(baseline)) / max(abs(float(baseline)), 1e-9)
+            deltas[metric] = {
+                "baseline": float(baseline), "current": float(current), "relative_change": relative,
+                "improved": relative < 0.0,
+                "materially_improved": relative <= -MSE_IMPROVEMENT_RATIO,
+                "regressed_beyond_guardrail": relative > MSE_REGRESSION_TOLERANCE,
+            }
+        else:
+            delta = float(current) - float(baseline)
+            threshold = MOTION_SIMILARITY_IMPROVEMENT if metric == "motion_similarity" else SSIM_IMPROVEMENT
+            tolerance = MOTION_SIMILARITY_REGRESSION_TOLERANCE if metric == "motion_similarity" else SSIM_REGRESSION_TOLERANCE
+            deltas[metric] = {
+                "baseline": float(baseline), "current": float(current), "delta": delta,
+                "improved": delta > 0.0,
+                "materially_improved": delta >= threshold,
+                "regressed_beyond_guardrail": delta < -tolerance,
+            }
+    return deltas
+
+
+def _selection_metric_value(metrics: dict[str, Any], metric: str) -> Any:
+    if metric == "motion_similarity":
+        motion = metrics.get("motion")
+        return motion.get(metric) if isinstance(motion, dict) else None
+    return metrics.get(metric)
+
+
+def _legacy_selection_policy() -> dict[str, Any]:
+    return {
+        "profile": "legacy_pareto",
+        "source": "legacy_default",
+        "primary_metrics": ["ssim", "mse", "motion_similarity"],
+        "guardrail_metrics": ["ssim", "mse", "motion_similarity"],
+        "advisory_metrics": ["mae", "peak_mse", "peak_ssim"],
+    }
+
+
+def _resolve_selection_policy(candidate_manifest_file: Path) -> dict[str, Any]:
+    candidate = load_json(candidate_manifest_file)
+    artifacts: list[tuple[str, dict[str, Any]]] = []
+    sources: list[dict[str, Any]] = [candidate]
+    source_manifest = candidate.get("source_manifest")
+    if isinstance(source_manifest, str) and Path(source_manifest).is_file():
+        generated = load_json(Path(source_manifest))
+        if isinstance(generated, dict):
+            sources.append(generated)
+    sample_root = _candidate_sample_root(candidate_manifest_file)
+    if sample_root is not None:
+        sources.append(
+            {
+                "design_artifact": str(sample_root / "design" / "effect_design.json"),
+                "analysis_artifact": str(sample_root / "analysis" / "transition_structure.json"),
+            }
+        )
+    for label, key in (("effect_design", "design_artifact"), ("transition_analysis", "analysis_artifact")):
+        value = next((source.get(key) for source in sources if isinstance(source.get(key), str)), None)
+        if isinstance(value, str) and Path(value).is_file():
+            artifact = load_json(Path(value))
+            if isinstance(artifact, dict):
+                artifacts.append((label, artifact))
+    for label, artifact in artifacts:
+        policy = artifact.get("evaluation_policy")
+        selection = policy.get("selection") if isinstance(policy, dict) else None
+        normalized = _normalize_selection_policy(selection, f"{label}.evaluation_policy.selection")
+        if normalized is not None:
+            return normalized
+    vocabulary = " ".join(_artifact_selection_vocabulary(artifact) for _, artifact in artifacts).casefold()
+    transform_markers = ("rotation", "rotate", "scale", "perspective", "card", "flip", "reflection")
+    if any(marker in vocabulary for marker in transform_markers):
+        return {
+            "profile": "transform",
+            "source": "artifact_inference",
+            "primary_metrics": ["mse", "mae", "peak_mse"],
+            "guardrail_metrics": [],
+            "advisory_metrics": ["ssim", "peak_ssim", "motion_similarity"],
+        }
+    return _legacy_selection_policy()
+
+
+def _candidate_sample_root(candidate_manifest_file: Path) -> Path | None:
+    candidate_dir = candidate_manifest_file.parent
+    candidates_dir = candidate_dir.parent
+    if candidates_dir.name != "candidates":
+        return None
+    sample_root = candidates_dir.parent
+    if (sample_root / "analysis" / "transition_structure.json").is_file() or (
+        sample_root / "design" / "effect_design.json"
+    ).is_file():
+        return sample_root
+    return None
+
+
+def _normalize_selection_policy(policy: Any, source: str) -> dict[str, Any] | None:
+    if not isinstance(policy, dict):
+        return None
+    def metrics_for(key: str) -> list[str]:
+        values = policy.get(key, [])
+        return [value for value in values if isinstance(value, str) and value in SELECTION_METRICS]
+    primary = metrics_for("primary_metrics")
+    if not primary:
+        return None
+    return {
+        "profile": str(policy.get("profile", "custom")),
+        "source": source,
+        "primary_metrics": primary,
+        "guardrail_metrics": metrics_for("guardrail_metrics"),
+        "advisory_metrics": metrics_for("advisory_metrics"),
+    }
+
+
+def _artifact_selection_vocabulary(artifact: dict[str, Any]) -> str:
+    transition = artifact.get("transition") if isinstance(artifact.get("transition"), dict) else {}
+    hints = artifact.get("planner_hints") if isinstance(artifact.get("planner_hints"), dict) else {}
+    design = artifact.get("design_notes") if isinstance(artifact.get("design_notes"), dict) else {}
+    seed = artifact.get("implementation_seed") if isinstance(artifact.get("implementation_seed"), dict) else {}
+    values: list[Any] = [transition, hints, design, seed, artifact.get("target_effect")]
+    return " ".join(str(value) for value in values)
 
 
 def _motion_delta(metrics: dict[str, Any], previous: dict[str, Any]) -> float | None:

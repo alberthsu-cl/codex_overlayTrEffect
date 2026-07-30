@@ -748,6 +748,9 @@ def score_candidate(
                 endpoint_frame_count=endpoint_frame_count,
             )
         )
+        phase_scores = _build_phase_scores(score, analysis_file)
+        if phase_scores is not None:
+            score["phase_scores"] = phase_scores
         # The default source mode intentionally uses video frame 0 and the
         # final decoded frame.  A prepared reference may instead be a compact
         # interior transition window, whose adjacent "stable" frames are not
@@ -1183,6 +1186,41 @@ def _build_transition_diagnostics(score: dict[str, Any]) -> dict[str, Any]:
             key=lambda item: float(item["ssim"]) if item["ssim"] is not None else float("inf"),
         )[:5],
     }
+
+
+def _build_phase_scores(score: dict[str, Any], analysis_file: Path | None) -> dict[str, Any] | None:
+    """Aggregate onset, peak, and settle scores from analysis progress coordinates."""
+    if analysis_file is None or not analysis_file.is_file():
+        return None
+    try:
+        analysis = load_json(analysis_file)
+    except (OSError, ValueError):
+        return None
+    mapping = analysis.get("frame_progress_mapping") if isinstance(analysis, dict) else None
+    if not isinstance(mapping, list):
+        return None
+    progress_by_frame = {
+        int(item["frame_index"]): float(item["normalized_progress"])
+        for item in mapping
+        if isinstance(item, dict)
+        and isinstance(item.get("frame_index"), int)
+        and isinstance(item.get("normalized_progress"), (int, float))
+    }
+    window = score.get("transition_window")
+    frames = score.get("frames")
+    if not isinstance(window, dict) or not isinstance(frames, list) or not progress_by_frame:
+        return None
+    start = int(window["frame_start"])
+    end = int(window["frame_end"])
+    grouped: dict[str, list[dict[str, Any]]] = {"onset": [], "peak": [], "settle": []}
+    for index in range(start, end + 1):
+        progress = progress_by_frame.get(index)
+        if progress is None or index >= len(frames):
+            continue
+        phase = "onset" if progress < 0.25 else "peak" if progress <= 0.75 else "settle"
+        grouped[phase].append(frames[index])
+    result = {phase: _aggregate_frame_scores(items) for phase, items in grouped.items() if items}
+    return result or None
 
 
 def _aggregate_frame_scores(frames: list[dict[str, Any]]) -> dict[str, Any]:

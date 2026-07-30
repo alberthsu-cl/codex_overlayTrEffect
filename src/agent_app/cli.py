@@ -28,6 +28,7 @@ from .candidate_controller import (
     candidate_status,
     continue_candidate_refinement,
     human_accept_candidate,
+    reassess_candidate_history,
     record_candidate_evaluation,
     restore_candidate_baseline,
     set_candidate_baseline,
@@ -299,6 +300,8 @@ def main(argv: list[str] | None = None) -> int:
                 iteration=args.iteration,
                 report_file=Path(args.report).resolve(),
             )
+        elif args.command == "candidate-reassess":
+            result = reassess_candidate_history(Path(args.manifest).resolve())
         elif args.command == "candidate-next":
             result = build_next_iteration_packet(
                 candidate_manifest_file=Path(args.manifest).resolve(),
@@ -635,6 +638,12 @@ def build_parser() -> argparse.ArgumentParser:
     candidate_record_score.add_argument("--manifest", required=True)
     candidate_record_score.add_argument("--iteration", required=True, type=int)
     candidate_record_score.add_argument("--report", required=True)
+
+    candidate_reassess = subparsers.add_parser(
+        "candidate-reassess",
+        help="preview historical baseline choices under the current selection policy without modifying state",
+    )
+    candidate_reassess.add_argument("--manifest", required=True)
 
     candidate_next = subparsers.add_parser(
         "candidate-next",

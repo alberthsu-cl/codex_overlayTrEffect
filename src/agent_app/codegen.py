@@ -33,6 +33,7 @@ def generate_effect(
     if action == "tune_existing_effect":
         return _generate_source_variant(
             design=design,
+            design_file=design_file,
             template_root=template_root,
             output_dir=output_dir,
             manifest_file=manifest_file,
@@ -77,6 +78,8 @@ def generate_effect(
         "manifest_version": 1,
         "effect_id": effect_id,
         "family": design["target_effect"].get("family"),
+        "analysis_artifact": design.get("analysis_artifact"),
+        "design_artifact": str(design_file.resolve()),
         "template": "dissolve",
         "class_name": class_name,
         "shader_symbol": shader_symbol,
@@ -95,6 +98,7 @@ def generate_effect(
 
 def _generate_source_variant(
     design: dict[str, Any],
+    design_file: Path,
     template_root: Path,
     output_dir: Path,
     manifest_file: Path,
@@ -211,6 +215,8 @@ def _generate_source_variant(
         "manifest_version": 1,
         "effect_id": effect_id,
         "family": target.get("family"),
+        "analysis_artifact": design.get("analysis_artifact"),
+        "design_artifact": str(design_file.resolve()),
         "template": "source_variant",
         "base_effect_id": base_effect_id,
         "base_stem": base_stem,
@@ -423,6 +429,8 @@ def initialize_candidate(
         "family": manifest.get("family"),
         "iteration": 0,
         "source_manifest": str(manifest_file),
+        "analysis_artifact": manifest.get("analysis_artifact"),
+        "design_artifact": manifest.get("design_artifact"),
         "candidate_files": candidate_files,
         "target_files": [str(path) for path in source_paths],
         "status": "active",
