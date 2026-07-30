@@ -1047,6 +1047,8 @@ def _score_motion_geometry(reference: Path, motion_metrics: dict[str, Any]) -> d
     scale_delta = abs(candidate_scale - reference_scale)
     reference_translation = expected.get("translation_field") or {}
     candidate_translation = candidate.get("translation_field") or {}
+    reference_pivot = expected.get("pivot_field") or {}
+    candidate_pivot = candidate.get("pivot_field") or {}
     translation_dx = float(candidate_translation.get("mean_dx_pixels", 0.0)) - float(
         reference_translation.get("mean_dx_pixels", 0.0)
     )
@@ -1054,6 +1056,11 @@ def _score_motion_geometry(reference: Path, motion_metrics: dict[str, Any]) -> d
         reference_translation.get("mean_dy_pixels", 0.0)
     )
     translation_delta = (translation_dx * translation_dx + translation_dy * translation_dy) ** 0.5
+    pivot_delta = None
+    if reference_pivot.get("status") == "estimated" and candidate_pivot.get("status") == "estimated":
+        pivot_dx = float(candidate_pivot.get("x_pixels", 0.0)) - float(reference_pivot.get("x_pixels", 0.0))
+        pivot_dy = float(candidate_pivot.get("y_pixels", 0.0)) - float(reference_pivot.get("y_pixels", 0.0))
+        pivot_delta = (pivot_dx * pivot_dx + pivot_dy * pivot_dy) ** 0.5
     reference_translation_magnitude = float(reference_translation.get("magnitude_pixels", 0.0))
     candidate_translation_magnitude = float(candidate_translation.get("magnitude_pixels", 0.0))
     translation_direction_agreement = True
@@ -1087,6 +1094,7 @@ def _score_motion_geometry(reference: Path, motion_metrics: dict[str, Any]) -> d
         rotation_delta > 10.0
         or not rotation_direction_agreement
         or translation_delta > 6.0
+        or (pivot_delta is not None and pivot_delta > 8.0)
         or not translation_direction_agreement
         or scale_delta > 0.15
         or reference_flip != candidate_flip
@@ -1102,6 +1110,7 @@ def _score_motion_geometry(reference: Path, motion_metrics: dict[str, Any]) -> d
         "translation_delta_dx_pixels": translation_dx,
         "translation_delta_dy_pixels": translation_dy,
         "translation_direction_agreement": translation_direction_agreement,
+        "pivot_delta_pixels": pivot_delta,
         "geometry_similarity": geometry_similarity,
         "reflection_agreement": reference_flip == candidate_flip,
     }

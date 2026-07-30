@@ -1342,10 +1342,13 @@ def _motion_refinement_priority(state: dict[str, Any]) -> dict[str, Any]:
         if confidence >= 0.5:
             translation_delta = geometry.get("translation_delta_pixels")
             translation_direction = geometry.get("translation_direction_agreement")
+            pivot_delta = geometry.get("pivot_delta_pixels")
             if (
                 isinstance(translation_delta, (int, float))
                 and translation_delta > 6.0
-            ) or translation_direction is False:
+            ) or translation_direction is False or (
+                isinstance(pivot_delta, (int, float)) and pivot_delta > 8.0
+            ):
                 return {
                     "level": "high",
                     "focus": "transform_position",
