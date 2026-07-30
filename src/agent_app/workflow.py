@@ -294,6 +294,8 @@ def ensure_reference_diagnostics(
                 and isinstance(payload.get("summary"), dict)
                 and isinstance(payload["summary"].get("topology_contract"), dict)
                 and isinstance(payload["summary"].get("motion_geometry"), dict)
+                and isinstance(payload["summary"].get("angular_motion"), dict)
+                and isinstance(payload["summary"].get("angular_motion_phases"), list)
                 and (not needs_edge_diagnostics or edge_diagnostics_file.is_file())
             ):
                 return {
@@ -802,6 +804,11 @@ def score_candidate(
             geometry = _score_motion_geometry(reference, motion_metrics)
             if geometry is not None:
                 score["motion_geometry"] = geometry
+            angular_motion = _score_angular_motion(
+                reference, motion_metrics, analysis_file=analysis_file, design_file=design_file
+            )
+            if angular_motion is not None:
+                score["angular_motion"] = angular_motion
             regional_motion = _score_regional_motion(reference, motion_metrics)
             if regional_motion is not None:
                 score["regional_motion"] = regional_motion
@@ -1047,6 +1054,108 @@ def _score_motion_geometry(reference: Path, motion_metrics: dict[str, Any]) -> d
         "scale_delta_ratio": scale_delta,
         "reflection_agreement": reference_flip == candidate_flip,
     }
+
+
+def _score_angular_motion(
+    reference: Path,
+    motion_metrics: dict[str, Any],
+    analysis_file: Path | None,
+    design_file: Path | None,
+) -> dict[str, Any] | None:
+    """Compare signed angular evidence only for rotation-like transition designs."""
+    if not _is_rotation_like_transition(analysis_file, design_file):
+        return None
+    diagnostics_file = reference.parent / "diagnostics" / "reference_motion_diagnostics.json"
+    if not diagnostics_file.exists():
+        return None
+    diagnostics = load_json(diagnostics_file)
+    expected = (diagnostics.get("summary") or {}).get("angular_motion")
+    candidate = motion_metrics.get("angular_motion")
+    if not isinstance(expected, dict) or not isinstance(candidate, dict):
+        return None
+    expected_phases = (diagnostics.get("summary") or {}).get("angular_motion_phases", [])
+    candidate_phases = motion_metrics.get("angular_motion_phases", [])
+    phase_comparison = _compare_angular_motion_phases(expected_phases, candidate_phases)
+    if phase_comparison:
+        confidence = min(float(item["confidence"]) for item in phase_comparison)
+        direction_match = all(bool(item["direction_match"]) for item in phase_comparison)
+        return {
+            "status": "satisfied" if direction_match else "direction_mismatch",
+            "reference": expected,
+            "candidate": candidate,
+            "phases": phase_comparison,
+            "direction_match": direction_match,
+            "confidence": confidence,
+            "enforcement": "advisory",
+        }
+    expected_confidence = float(expected.get("confidence", 0.0))
+    candidate_confidence = float(candidate.get("confidence", 0.0))
+    if expected.get("status") != "estimated" or candidate.get("status") != "estimated":
+        return {
+            "status": "advisory_indeterminate",
+            "reference": expected,
+            "candidate": candidate,
+            "reason": "signed angular evidence is not reliable enough to direct refinement",
+        }
+    direction_match = expected.get("direction") == candidate.get("direction")
+    confidence = min(expected_confidence, candidate_confidence)
+    return {
+        "status": "satisfied" if direction_match else "direction_mismatch",
+        "reference": expected,
+        "candidate": candidate,
+        "direction_match": direction_match,
+        "confidence": confidence,
+        "enforcement": "advisory",
+    }
+
+
+def _compare_angular_motion_phases(expected: Any, candidate: Any) -> list[dict[str, Any]]:
+    if not isinstance(expected, list) or not isinstance(candidate, list):
+        return []
+    candidate_by_name = {
+        item.get("name"): item for item in candidate if isinstance(item, dict) and isinstance(item.get("name"), str)
+    }
+    comparisons: list[dict[str, Any]] = []
+    for reference_phase in expected:
+        if not isinstance(reference_phase, dict) or reference_phase.get("status") != "estimated":
+            continue
+        name = reference_phase.get("name")
+        candidate_phase = candidate_by_name.get(name)
+        if not isinstance(candidate_phase, dict) or candidate_phase.get("status") != "estimated":
+            continue
+        confidence = min(
+            float(reference_phase.get("confidence", 0.0)),
+            float(candidate_phase.get("confidence", 0.0)),
+        )
+        if confidence < 0.35:
+            continue
+        comparisons.append(
+            {
+                "name": name,
+                "reference": reference_phase,
+                "candidate": candidate_phase,
+                "direction_match": reference_phase.get("direction") == candidate_phase.get("direction"),
+                "confidence": confidence,
+            }
+        )
+    return comparisons
+
+
+def _is_rotation_like_transition(analysis_file: Path | None, design_file: Path | None) -> bool:
+    vocabulary: list[str] = []
+    for artifact_file in (analysis_file, design_file):
+        if artifact_file is None or not artifact_file.is_file():
+            continue
+        try:
+            artifact = load_json(artifact_file)
+        except (OSError, ValueError):
+            continue
+        vocabulary.append(str(artifact.get("transition", {})))
+        vocabulary.append(str(artifact.get("planner_hints", {})))
+        vocabulary.append(str(artifact.get("target_effect", {})))
+        vocabulary.append(str(artifact.get("implementation_seed", {})))
+    text = " ".join(vocabulary).casefold()
+    return any(marker in text for marker in ("rotate", "rotation", "scale", "perspective", "card", "flip", "reflection"))
 
 
 def _score_regional_motion(reference: Path, motion_metrics: dict[str, Any]) -> dict[str, Any] | None:

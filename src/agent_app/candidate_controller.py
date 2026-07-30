@@ -706,6 +706,9 @@ def _metrics_from_report(report: dict[str, Any]) -> dict[str, Any]:
     geometry = score.get("motion_geometry")
     if isinstance(geometry, dict):
         metrics["motion_geometry"] = geometry
+    angular_motion = score.get("angular_motion")
+    if isinstance(angular_motion, dict):
+        metrics["angular_motion"] = angular_motion
     regional_motion = score.get("regional_motion")
     if isinstance(regional_motion, dict):
         metrics["regional_motion"] = regional_motion
@@ -1160,6 +1163,17 @@ def _motion_refinement_priority(state: dict[str, Any]) -> dict[str, Any]:
             "recommended_categories": ["shader_structure", "regions"],
         }
     geometry = latest["metrics"].get("motion_geometry")
+    angular_motion = latest["metrics"].get("angular_motion")
+    if isinstance(angular_motion, dict) and angular_motion.get("status") == "direction_mismatch":
+        confidence = angular_motion.get("confidence")
+        if isinstance(confidence, (int, float)) and confidence >= 0.35:
+            return {
+                "level": "high",
+                "focus": "angular_direction",
+                "reason": "reliable signed angular motion disagrees between the reference and candidate",
+                "angular_motion": angular_motion,
+                "recommended_categories": ["displacement", "shader_structure"],
+            }
     if isinstance(geometry, dict) and geometry.get("status") == "geometry_mismatch":
         candidate = geometry.get("candidate") if isinstance(geometry.get("candidate"), dict) else {}
         reference = geometry.get("reference") if isinstance(geometry.get("reference"), dict) else {}
@@ -1339,6 +1353,18 @@ def _refinement_priority_instruction(priority: Any) -> str:
             "Current refinement priority: high motion geometry. The candidate and reference transformation estimates "
             f"differ by {rotation_delta} degrees of rotation and {scale_delta} scale ratio. "
             "Inspect rotation, scale, reflection, and spatial-displacement evidence before tuning blur or blend."
+        )
+    if priority.get("focus") == "angular_direction":
+        angular = priority.get("angular_motion") if isinstance(priority.get("angular_motion"), dict) else {}
+        reference = angular.get("reference") if isinstance(angular.get("reference"), dict) else {}
+        candidate = angular.get("candidate") if isinstance(angular.get("candidate"), dict) else {}
+        return (
+            "Current refinement priority: high signed angular direction. The reference indicates "
+            f"`{reference.get('direction', 'indeterminate')}` rotation while the candidate indicates "
+            f"`{candidate.get('direction', 'indeterminate')}` (confidence {angular.get('confidence', 'unknown')}). "
+            "Reverse the sign of an existing centered rotation transform under `displacement`; choose "
+            "`shader_structure` only if the pivot or rotation transform is missing. Do not change blur, blend, "
+            "or region masks until the signed rotation direction is correct."
         )
     if priority.get("focus") == "regional_direction":
         regional = priority.get("regional_motion") if isinstance(priority.get("regional_motion"), dict) else {}

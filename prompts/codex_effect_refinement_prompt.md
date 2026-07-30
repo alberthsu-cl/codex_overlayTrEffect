@@ -33,6 +33,10 @@ Read:
   and make the UV policy explicit; otherwise leave sampler behavior alone.
 - `motion_geometry` comparison when the score report includes rotation, scale,
   reflection, or spatial-displacement diagnostics
+- `angular_motion` comparison when the transition is rotation-like. It reports
+  a confidence-qualified clockwise, counter_clockwise, or indeterminate result
+  from signed flow around an estimated pivot. Treat indeterminate results as
+  advisory only; do not infer direction from a global flow average.
 - `regional_motion` comparison when the score report includes continuous signed
   regional vectors and dominant-axis evidence
 - the latest candidate review MP4 when available
@@ -74,6 +78,11 @@ Motion-first triage:
 - When `motion_geometry.status` is `geometry_mismatch` and both estimates have
   good confidence, inspect the reported rotation, scale, reflection, and
   displacement residuals before changing blur or blend.
+- When `angular_motion.status` is `direction_mismatch` with confidence at least
+  `0.35`, correct clockwise/counter_clockwise sign before blur, blend, timing,
+  or sampler work. Use `displacement` to reverse an existing rotation-angle
+  sign. Use `shader_structure` only when the centered pivot or rotation
+  transform itself is absent.
 - When `regional_motion.status` is `direction_mismatch`, use its continuous
   signed vectors and axis agreement to correct displacement or region layout.
   Do not reduce the evidence to fixed four- or eight-direction buckets.

@@ -148,6 +148,8 @@ class WorkflowTests(unittest.TestCase):
                         "summary": {
                             "topology_contract": {"status": "not_required"},
                             "motion_geometry": {"status": "needs_review"},
+                            "angular_motion": {"status": "indeterminate"},
+                            "angular_motion_phases": [],
                         },
                     }
                 ),
