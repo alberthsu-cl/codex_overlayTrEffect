@@ -43,6 +43,27 @@ Read:
 - the latest optical-flow diagnostic MP4 when available
 - all source files under the candidate workspace
 
+Geometry fields are actionable control evidence, not descriptive metadata. For
+each transform-like candidate, compare the reference and candidate
+`motion_geometry` values before editing:
+
+- `translation_field` controls the transform position and signed movement. If
+  its X/Y vector or direction disagrees, change the UV origin, pivot, or signed
+  displacement; do not make a timing-only change.
+- `rotation_field` and `rotation_direction_agreement` control the signed angle.
+  A reversed sign requires reversing the rotation displacement, not changing
+  blur or easing.
+- `radial_scale_field` controls scale around the pivot.
+- `reflection_or_flip` controls the handedness of the transform.
+- `spatial_displacement` is the residual after the global transform and can
+  indicate missing region-specific motion.
+
+When these fields disagree with adequate confidence, the iteration must change
+the source code that controls the mismatching geometry and record the relevant
+field in `visual_hypothesis`. Use `timing` only after position, direction,
+pivot, and scale are aligned, or when the geometry diagnostics are explicitly
+low-confidence.
+
 Rules:
 - edit only the candidate workspace files explicitly provided for this iteration
 - do not edit existing production effects or registration tables

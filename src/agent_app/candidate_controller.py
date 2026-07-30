@@ -1500,7 +1500,11 @@ Create or update exactly one iteration_{packet['iteration']:03d}_*.json record w
 
 def _refinement_priority_instruction(priority: Any) -> str:
     if not isinstance(priority, dict) or priority.get("level") != "high":
-        return "Current refinement priority: normal. Use the available evidence to choose the next hypothesis."
+        return (
+            "Current refinement priority: normal. Read motion_geometry before choosing a hypothesis. If translation, "
+            "pivot, rotation sign, scale, or reflection disagrees with adequate confidence, change the corresponding "
+            "transform/displacement source code before using timing, blur, or blend."
+        )
     categories = ", ".join(str(category) for category in priority.get("recommended_categories", []))
     if priority.get("focus") == "motion_topology":
         topology = priority.get("topology") if isinstance(priority.get("topology"), dict) else {}
