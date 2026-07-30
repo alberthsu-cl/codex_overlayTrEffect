@@ -226,6 +226,28 @@ def main(argv: list[str] | None = None) -> int:
                 iteration=args.iteration,
                 calibrate_progress=args.calibrate_progress,
             )
+            if args.continue_analysis or args.continue_design:
+                if not args.continue_analysis or not args.continue_design:
+                    raise ValueError("--continue-analysis and --continue-design must be provided together")
+                controller = result.get("controller")
+                if not isinstance(controller, dict) or controller.get("status") not in {
+                    "accepted", "rejected", "tradeoff"
+                }:
+                    raise RuntimeError("candidate evaluation completed without a continuable controller outcome")
+                diagnostics = ensure_reference_diagnostics(
+                    workspace_root=workspace_root,
+                    reference=Path(args.reference).resolve(),
+                    width=args.width,
+                    height=args.height,
+                )
+                result["continuation"] = continue_candidate_refinement(
+                    candidate_manifest_file=Path(args.manifest).resolve(),
+                    analysis_file=Path(args.continue_analysis).resolve(),
+                    design_file=Path(args.continue_design).resolve(),
+                    max_iterations=args.continue_max_iterations,
+                    max_rejected=args.continue_max_rejected,
+                )
+                result["diagnostics"] = diagnostics
         elif args.command == "candidate-set-baseline":
             result = set_candidate_baseline(
                 candidate_manifest_file=Path(args.manifest).resolve(),
@@ -564,6 +586,13 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="linear-probe the staged candidate and use an evaluation-local derived progress schedule",
     )
+    candidate_evaluate.add_argument(
+        "--continue-analysis",
+        help="continue the controller automatically after a completed score using this analysis artifact",
+    )
+    candidate_evaluate.add_argument("--continue-design")
+    candidate_evaluate.add_argument("--continue-max-iterations", type=int, default=20)
+    candidate_evaluate.add_argument("--continue-max-rejected", type=int, default=8)
     candidate_evaluate.add_argument(
         "--iteration",
         type=int,

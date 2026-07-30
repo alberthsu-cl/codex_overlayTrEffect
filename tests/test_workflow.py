@@ -1049,6 +1049,7 @@ class WorkflowTests(unittest.TestCase):
             request = Path(packet["prompt_file"]).read_text(encoding="utf-8")
             self.assertIn("candidate-evaluate", request)
             self.assertIn("candidate-continue", request)
+            self.assertIn("--continue-analysis", request)
             self.assertIn("`rejected`", request)
             self.assertIn("not a failure", request)
             self.assertIn("--iteration 2", request)

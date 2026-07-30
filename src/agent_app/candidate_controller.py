@@ -354,7 +354,14 @@ def build_next_iteration_packet(
         profile = state.get("evaluation_profile")
         if not isinstance(profile, dict):
             raise ValueError("candidate has no evaluation profile; run candidate-set-evaluation-profile first")
-        evaluation_command = _evaluation_command(profile, next_iteration)
+        evaluation_command = _evaluation_command(
+            profile,
+            next_iteration,
+            analysis_file,
+            design_file,
+            max_iterations,
+            max_rejected,
+        )
         continuation_command = _continuation_command(
             candidate_manifest_file,
             analysis_file,
@@ -1395,7 +1402,14 @@ def _motion_refinement_priority(state: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _evaluation_command(profile: dict[str, Any], iteration: int) -> str:
+def _evaluation_command(
+    profile: dict[str, Any],
+    iteration: int,
+    analysis_file: Path,
+    design_file: Path,
+    max_iterations: int,
+    max_rejected: int,
+) -> str:
     backup_dir = Path(profile["backup_root"]) / f"iteration_{iteration:03d}_{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}"
     lines = [
         "conda run -n harness python agent/src/main.py candidate-evaluate `",
@@ -1410,7 +1424,11 @@ def _evaluation_command(profile: dict[str, Any], iteration: int) -> str:
         f'  --platform "{profile.get("platform", "x64")}" `',
         f'  --width {profile["width"]} --height {profile["height"]} `',
         f'  --frame-start {profile["frame_start"]} --frame-end {profile["frame_end"]} `',
-        f"  --iteration {iteration}",
+        f"  --iteration {iteration} `",
+        f'  --continue-analysis "{analysis_file}" `',
+        f'  --continue-design "{design_file}" `',
+        f"  --continue-max-iterations {max_iterations} `",
+        f"  --continue-max-rejected {max_rejected}",
     ]
     if profile.get("calibrate_progress", True):
         lines[-1] += " `"
@@ -1557,7 +1575,9 @@ def _evaluation_instruction(packet: dict[str, Any]) -> str:
 - Progress calibration and its linear probe are normal evaluation stages, not failures.
 - Do not stop, restore sources yourself, or start a new phase after any of those outcomes.
 
-Only treat the evaluation as failed when the `candidate-evaluate` command itself fails and does not produce a controller outcome. Read the resulting controller outcome. If it is `accepted`, `rejected`, or `tradeoff`, immediately run exactly this continuation command:
+This evaluation command already invokes controller continuation after `accepted`, `rejected`, or `tradeoff`. Do not run the continuation command a second time. Read its result, then read and execute the newly generated request when the parent goal asks for a bounded run.
+
+For reference, the continuation performed by the command is:
 
 ```powershell
 {continuation}

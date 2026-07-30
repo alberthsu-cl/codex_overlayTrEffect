@@ -6,8 +6,20 @@ D:\AI_Harness\agent\work\samples\ACTUAL_SAMPLE_ID\candidates\ACTUAL_EFFECT_NAME
 
 Run at most six additional evaluated iterations. Do not create another FX ID.
 
-1. Run this command once with the actual candidate paths and a new, unused
-   phase name:
+1. Inspect the current controller state first:
+
+   ```powershell
+   conda run -n harness python agent/src/main.py candidate-status `
+     --manifest "<candidate-root>/candidate_manifest.json"
+   ```
+
+   If an active phase has remaining budget, continue that phase. Do **not** run
+   `candidate-resume` and do not create a new phase. If its newest completed
+   iteration has no newer request packet, run the embedded `candidate-continue`
+   command once to create the next request. Then start from that newest request.
+
+   Only when there is no active phase, or its budget is exhausted, run this
+   command once with a new, unused phase name:
 
    ```powershell
    conda run -n harness python agent/src/main.py candidate-resume `
