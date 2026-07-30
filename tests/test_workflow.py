@@ -165,7 +165,10 @@ class WorkflowTests(unittest.TestCase):
                         "pairs": [],
                         "summary": {
                             "topology_contract": {"status": "not_required"},
-                            "motion_geometry": {"status": "needs_review"},
+                            "motion_geometry": {
+                                "status": "needs_review",
+                                "translation_field": {},
+                            },
                             "angular_motion": {"status": "indeterminate"},
                             "angular_motion_phases": [],
                         },

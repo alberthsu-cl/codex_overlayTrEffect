@@ -294,6 +294,7 @@ def ensure_reference_diagnostics(
                 and isinstance(payload.get("summary"), dict)
                 and isinstance(payload["summary"].get("topology_contract"), dict)
                 and isinstance(payload["summary"].get("motion_geometry"), dict)
+                and isinstance((payload["summary"]["motion_geometry"].get("translation_field")), dict)
                 and isinstance(payload["summary"].get("angular_motion"), dict)
                 and isinstance(payload["summary"].get("angular_motion_phases"), list)
                 and (not needs_edge_diagnostics or edge_diagnostics_file.is_file())
@@ -1044,6 +1045,15 @@ def _score_motion_geometry(reference: Path, motion_metrics: dict[str, Any]) -> d
     reference_scale = float((expected.get("radial_scale_field") or {}).get("mean_ratio", 1.0))
     candidate_scale = float((candidate.get("radial_scale_field") or {}).get("mean_ratio", 1.0))
     scale_delta = abs(candidate_scale - reference_scale)
+    reference_translation = expected.get("translation_field") or {}
+    candidate_translation = candidate.get("translation_field") or {}
+    translation_dx = float(candidate_translation.get("mean_dx_pixels", 0.0)) - float(
+        reference_translation.get("mean_dx_pixels", 0.0)
+    )
+    translation_dy = float(candidate_translation.get("mean_dy_pixels", 0.0)) - float(
+        reference_translation.get("mean_dy_pixels", 0.0)
+    )
+    translation_delta = (translation_dx * translation_dx + translation_dy * translation_dy) ** 0.5
     reference_flip = bool((expected.get("reflection_or_flip") or {}).get("detected", False))
     candidate_flip = bool((candidate.get("reflection_or_flip") or {}).get("detected", False))
     return {
@@ -1052,6 +1062,9 @@ def _score_motion_geometry(reference: Path, motion_metrics: dict[str, Any]) -> d
         "candidate": candidate,
         "rotation_delta_degrees": rotation_delta,
         "scale_delta_ratio": scale_delta,
+        "translation_delta_pixels": translation_delta,
+        "translation_delta_dx_pixels": translation_dx,
+        "translation_delta_dy_pixels": translation_dy,
         "reflection_agreement": reference_flip == candidate_flip,
     }
 
