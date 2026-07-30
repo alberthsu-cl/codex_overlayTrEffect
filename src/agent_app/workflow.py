@@ -1064,6 +1064,7 @@ def _score_motion_geometry(reference: Path, motion_metrics: dict[str, Any]) -> d
     reference_translation_magnitude = float(reference_translation.get("magnitude_pixels", 0.0))
     candidate_translation_magnitude = float(candidate_translation.get("magnitude_pixels", 0.0))
     translation_direction_agreement = True
+    translation_direction_delta = 0.0
     if reference_translation_magnitude > 2.0 and candidate_translation_magnitude > 2.0:
         reference_vector = (
             float(reference_translation.get("mean_dx_pixels", 0.0)),
@@ -1073,10 +1074,14 @@ def _score_motion_geometry(reference: Path, motion_metrics: dict[str, Any]) -> d
             float(candidate_translation.get("mean_dx_pixels", 0.0)),
             float(candidate_translation.get("mean_dy_pixels", 0.0)),
         )
+        reference_angle = math.degrees(math.atan2(reference_vector[1], reference_vector[0]))
+        candidate_angle = math.degrees(math.atan2(candidate_vector[1], candidate_vector[0]))
+        translation_direction_delta = abs((candidate_angle - reference_angle + 180.0) % 360.0 - 180.0)
         translation_direction_agreement = (
             reference_vector[0] * candidate_vector[0]
             + reference_vector[1] * candidate_vector[1]
             > 0.0
+            and translation_direction_delta <= 30.0
         )
     reference_flip = bool((expected.get("reflection_or_flip") or {}).get("detected", False))
     candidate_flip = bool((candidate.get("reflection_or_flip") or {}).get("detected", False))
@@ -1093,7 +1098,7 @@ def _score_motion_geometry(reference: Path, motion_metrics: dict[str, Any]) -> d
     geometry_mismatch = (
         rotation_delta > 10.0
         or not rotation_direction_agreement
-        or translation_delta > 6.0
+        or translation_delta > 2.0
         or (pivot_delta is not None and pivot_delta > 8.0)
         or not translation_direction_agreement
         or scale_delta > 0.15
@@ -1110,6 +1115,7 @@ def _score_motion_geometry(reference: Path, motion_metrics: dict[str, Any]) -> d
         "translation_delta_dx_pixels": translation_dx,
         "translation_delta_dy_pixels": translation_dy,
         "translation_direction_agreement": translation_direction_agreement,
+        "translation_direction_delta_degrees": translation_direction_delta,
         "pivot_delta_pixels": pivot_delta,
         "geometry_similarity": geometry_similarity,
         "reflection_agreement": reference_flip == candidate_flip,

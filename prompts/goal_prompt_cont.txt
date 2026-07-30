@@ -55,5 +55,12 @@ Keep endpoint behavior, the existing FX ID, and the candidate boundary intact.
 When reliable motion coverage is high but direction agreement is weak, prioritize
 regions or displacement before blur or blend.
 
+For transform-like effects, read `motion_geometry` in every iteration report.
+Treat translation, pivot, rotation-sign, scale, and reflection mismatches as
+source-code geometry problems. When position or pivot is wrong, prioritize
+`displacement` or `shader_structure`; do not spend the iteration on timing,
+blur, or blend. Timing is appropriate only after the transform position and
+direction agree, or when geometry confidence is explicitly low.
+
 Report the selected baseline iteration, completed iteration numbers, final
 controller status, and final comparison-video path.
