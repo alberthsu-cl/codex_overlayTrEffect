@@ -24,6 +24,7 @@ from .codegen import (
     register_effect,
 )
 from .candidate_controller import (
+    apply_reassessed_baseline,
     build_next_iteration_packet,
     candidate_status,
     continue_candidate_refinement,
@@ -301,7 +302,12 @@ def main(argv: list[str] | None = None) -> int:
                 report_file=Path(args.report).resolve(),
             )
         elif args.command == "candidate-reassess":
-            result = reassess_candidate_history(Path(args.manifest).resolve())
+            manifest_file = Path(args.manifest).resolve()
+            result = (
+                apply_reassessed_baseline(manifest_file)
+                if args.apply_best
+                else reassess_candidate_history(manifest_file)
+            )
         elif args.command == "candidate-next":
             result = build_next_iteration_packet(
                 candidate_manifest_file=Path(args.manifest).resolve(),
@@ -641,9 +647,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     candidate_reassess = subparsers.add_parser(
         "candidate-reassess",
-        help="preview historical baseline choices under the current selection policy without modifying state",
+        help="replay historical evaluated candidates under the current selection policy",
     )
     candidate_reassess.add_argument("--manifest", required=True)
+    candidate_reassess.add_argument(
+        "--apply-best",
+        action="store_true",
+        help="restore the best eligible saved candidate and set it as the selected baseline",
+    )
 
     candidate_next = subparsers.add_parser(
         "candidate-next",

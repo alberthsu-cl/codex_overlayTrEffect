@@ -297,6 +297,22 @@ iteration without changing candidate files, controller state, or registrations.
 For rotation, scale, perspective-card, and flip effects, image error and peak
 window error are primary; SSIM and optical-flow similarity are advisory.
 
+To apply the reassessment, restoring the best eligible historical shader and
+making it the selected baseline, add `--apply-best`:
+
+```powershell
+conda run -n harness python agent/src/main.py candidate-reassess `
+  --manifest "$candidateRoot/candidate_manifest.json" `
+  --apply-best
+```
+
+The controller only applies a result with a preserved source snapshot. Every
+new evaluated iteration is snapshotted automatically. Older iterations created
+before this behavior may be reported as `ineligible`; their report and video
+are still useful, but the controller will not reconstruct source code from
+them. Applying a reassessment closes an active phase, so start a new phase with
+`candidate-resume` afterward.
+
 Review these generated artifacts after each candidate evaluation:
 
 - `rendered_transition.mp4`

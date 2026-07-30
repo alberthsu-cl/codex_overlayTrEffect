@@ -33,11 +33,14 @@ from agent_app.cli import main as cli_main
 from agent_app.candidate_controller import (
     _endpoints_are_exact,
     _motion_refinement_priority,
+    _normalize_selection_policy,
     _select_outcome,
     _select_outcome_with_decision,
+    apply_reassessed_baseline,
     build_next_iteration_packet,
     human_accept_candidate,
     continue_candidate_refinement,
+    reassess_candidate_history,
     record_candidate_evaluation,
     restore_candidate_baseline,
     set_candidate_baseline,
@@ -53,6 +56,21 @@ from agent_app.codegen import (
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_transform_policy_treats_ssim_as_advisory(self) -> None:
+        policy = _normalize_selection_policy(
+            {
+                "profile": "transform",
+                "primary_metrics": ["mse", "mae"],
+                "guardrail_metrics": ["peak_ssim"],
+                "advisory_metrics": ["motion_similarity"],
+            },
+            "test",
+        )
+
+        self.assertIsNotNone(policy)
+        self.assertEqual(policy["guardrail_metrics"], [])
+        self.assertEqual(policy["advisory_metrics"], ["motion_similarity", "peak_ssim"])
+
     def test_transform_selection_accepts_image_error_improvement_without_flow_guardrails(self) -> None:
         baseline = {
             "iteration": 0,
@@ -904,6 +922,62 @@ class WorkflowTests(unittest.TestCase):
                     path.rmdir()
             root.rmdir()
 
+    def test_reassess_apply_restores_saved_historical_candidate(self) -> None:
+        root = Path(__file__).resolve().parents[1] / "work" / f"reassess_test_{uuid.uuid4().hex}"
+        candidate_dir = root / "candidate"
+        candidate_dir.mkdir(parents=True)
+        manifest = candidate_dir / "candidate_manifest.json"
+        candidate_source = candidate_dir / "Candidate.h"
+        target_source = root / "target" / "Candidate.h"
+        baseline_report = candidate_dir / "baseline_report.json"
+        improved_report = candidate_dir / "improved_report.json"
+        design = candidate_dir / "design.json"
+        generated_manifest = candidate_dir / "generated_manifest.json"
+        try:
+            candidate_source.write_text("baseline", encoding="utf-8")
+            target_source.parent.mkdir()
+            target_source.write_text("baseline", encoding="utf-8")
+            design.write_text(
+                json.dumps({"evaluation_policy": {"selection": {
+                    "profile": "transform",
+                    "primary_metrics": ["mse", "mae"],
+                    "guardrail_metrics": ["peak_ssim"],
+                    "advisory_metrics": [],
+                }}}),
+                encoding="utf-8",
+            )
+            generated_manifest.write_text(json.dumps({"design_artifact": str(design)}), encoding="utf-8")
+            manifest.write_text(json.dumps({
+                "effect_id": "ModelGenerated\\Test",
+                "candidate_files": [str(candidate_source)],
+                "target_files": [str(target_source)],
+                "source_manifest": str(generated_manifest),
+            }), encoding="utf-8")
+            self._write_controller_report(baseline_report, mse=100.0, ssim=0.50)
+            set_candidate_baseline(manifest, iteration=0, report_file=baseline_report)
+            candidate_source.write_text("historical improvement", encoding="utf-8")
+            (candidate_dir / "iteration_001_displacement.json").write_text(
+                json.dumps({"iteration": 1, "hypothesis_category": "displacement"}), encoding="utf-8"
+            )
+            self._write_controller_report(improved_report, mse=80.0, ssim=0.40)
+            record_candidate_evaluation(manifest, 1, improved_report)
+            candidate_source.write_text("later edit", encoding="utf-8")
+
+            preview = reassess_candidate_history(manifest)
+            self.assertEqual(preview["recommended_baseline_iteration"], 1)
+            applied = apply_reassessed_baseline(manifest)
+
+            self.assertEqual(applied["restored_baseline_iteration"], 1)
+            self.assertEqual(candidate_source.read_text(encoding="utf-8"), "historical improvement")
+            self.assertEqual(target_source.read_text(encoding="utf-8"), "historical improvement")
+        finally:
+            for path in sorted(root.rglob("*"), reverse=True):
+                if path.is_file():
+                    path.unlink()
+                elif path.is_dir():
+                    path.rmdir()
+            root.rmdir()
+
     def test_controller_starts_independent_refinement_phase(self) -> None:
         root = Path(__file__).resolve().parents[1] / "work" / f"phase_test_{uuid.uuid4().hex}"
         candidate_dir = root / "candidate"
@@ -975,6 +1049,8 @@ class WorkflowTests(unittest.TestCase):
             request = Path(packet["prompt_file"]).read_text(encoding="utf-8")
             self.assertIn("candidate-evaluate", request)
             self.assertIn("candidate-continue", request)
+            self.assertIn("`rejected`", request)
+            self.assertIn("not a failure", request)
             self.assertIn("--iteration 2", request)
             self.assertIn("--calibrate-progress", request)
 

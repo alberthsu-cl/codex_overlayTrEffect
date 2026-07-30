@@ -28,7 +28,14 @@ Run at most six additional evaluated iterations. Do not create another FX ID.
    - Run the embedded `candidate-continue` command after `accepted`, `rejected`,
      or `tradeoff`, then follow the next request.
    - Continue this same request/evaluate/continue sequence until the configured
-     budget is exhausted or a stated stop condition occurs.
+   budget is exhausted or a stated stop condition occurs.
+
+An `accepted`, `rejected`, or `tradeoff` score is a completed evaluation, not
+an evaluation failure. Progress calibration and its linear probe are normal.
+Do not stop, restore sources manually, or start a new phase after those
+outcomes; immediately run the embedded `candidate-continue` command. Treat an
+evaluation as failed only when `candidate-evaluate` itself fails without a
+controller outcome.
 3. Stop after the configured additional evaluations, or on a build failure,
    evaluation failure, controller block, or exhausted phase budget.
 

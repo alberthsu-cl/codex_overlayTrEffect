@@ -63,7 +63,15 @@ def set_candidate_baseline(
         "selected_at": _timestamp(),
         "selection_policy": _resolve_selection_policy(candidate_manifest_file),
     }
-    _upsert_history(state, iteration, "baseline", "accepted", metrics, str(report_file))
+    _upsert_history(
+        state,
+        iteration,
+        "baseline",
+        "accepted",
+        metrics,
+        str(report_file),
+        str(snapshot_dir),
+    )
     _upsert_shortlist(state, iteration, "accepted", metrics, str(report_file))
     _refresh_rejected_budget(state)
     _write_state(candidate_manifest_file, state)
@@ -185,19 +193,7 @@ def restore_candidate_baseline(candidate_manifest_file: Path) -> dict[str, Any]:
     snapshot_dir = Path(str(baseline.get("source_snapshot", "")))
     if not snapshot_dir.is_dir():
         raise FileNotFoundError("selected baseline has no source snapshot")
-    candidate = load_json(candidate_manifest_file)
-    candidate_files = [Path(path) for path in candidate.get("candidate_files", [])]
-    target_files = [Path(path) for path in candidate.get("target_files", [])]
-    if not candidate_files or len(candidate_files) != len(target_files):
-        raise ValueError("candidate manifest has invalid candidate and target files")
-    restored: list[str] = []
-    for candidate_file, target_file in zip(candidate_files, target_files):
-        source = snapshot_dir / candidate_file.name
-        if not source.exists():
-            raise FileNotFoundError(f"baseline snapshot is missing {source.name}")
-        shutil.copyfile(source, candidate_file)
-        shutil.copyfile(source, target_file)
-        restored.append(str(candidate_file))
+    restored = _restore_sources_from_snapshot(candidate_manifest_file, snapshot_dir)
     return {
         "status": "succeeded",
         "effect_id": state["effect_id"],
@@ -508,12 +504,24 @@ def record_candidate_evaluation(
     outcome, reason, decision = _select_outcome_with_decision(
         state.get("baseline"), metrics, selection_policy
     )
+    # Preserve every evaluated shader before a later continuation restores a baseline.
+    # Tradeoff candidates may become eligible after a selection-policy revision.
+    snapshot_dir = _snapshot_evaluated_sources(candidate_manifest_file, iteration)
     record["evaluation"] = metrics
     record["status"] = outcome
     record["reason"] = reason
     record["selection_decision"] = decision
+    record["source_snapshot"] = str(snapshot_dir)
     write_json(iteration_file, record)
-    _upsert_history(state, iteration, category, outcome, metrics, str(report_file))
+    _upsert_history(
+        state,
+        iteration,
+        category,
+        outcome,
+        metrics,
+        str(report_file),
+        str(snapshot_dir),
+    )
     if outcome in {"accepted", "tradeoff"}:
         _upsert_shortlist(state, iteration, outcome, metrics, str(report_file))
     if outcome == "accepted":
@@ -564,16 +572,28 @@ def candidate_status(candidate_manifest_file: Path) -> dict[str, Any]:
 
 
 def reassess_candidate_history(candidate_manifest_file: Path) -> dict[str, Any]:
-    """Preview baseline choices under the current policy without changing candidate files or state."""
+    """Replay saved evaluations under the current policy without changing candidate files or state."""
+    return _reassess_candidate_history(candidate_manifest_file, apply_best=False)
+
+
+def apply_reassessed_baseline(candidate_manifest_file: Path) -> dict[str, Any]:
+    """Restore the best policy-eligible historical snapshot as the selected baseline."""
+    return _reassess_candidate_history(candidate_manifest_file, apply_best=True)
+
+
+def _reassess_candidate_history(
+    candidate_manifest_file: Path,
+    apply_best: bool,
+) -> dict[str, Any]:
     state = _load_or_create_state(candidate_manifest_file)
-    baseline = state.get("baseline")
-    if not isinstance(baseline, dict):
+    initial_baseline = _initial_history_baseline(candidate_manifest_file, state)
+    if initial_baseline is None:
         raise ValueError("candidate has no selected baseline")
     policy = _resolve_selection_policy(candidate_manifest_file)
-    prospective = {"iteration": baseline["iteration"], "metrics": baseline["metrics"]}
+    prospective = dict(initial_baseline)
     entries: list[dict[str, Any]] = []
     for item in sorted(state.get("history", []), key=lambda value: int(value.get("iteration", -1))):
-        if item.get("hypothesis_category") == "baseline":
+        if item.get("hypothesis_category") == "baseline" or int(item.get("iteration", -1)) <= int(initial_baseline["iteration"]):
             continue
         report_name = item.get("report_file")
         if not isinstance(report_name, str) or not Path(report_name).is_file():
@@ -587,17 +607,67 @@ def reassess_candidate_history(candidate_manifest_file: Path) -> dict[str, Any]:
             "reason": reason,
             "selection_decision": decision,
         }
+        snapshot_dir = _history_snapshot(candidate_manifest_file, item)
+        entry["source_snapshot"] = str(snapshot_dir) if snapshot_dir is not None else None
+        entry["eligible_for_baseline"] = snapshot_dir is not None
+        if outcome == "accepted" and snapshot_dir is None:
+            entry["reassessed_status"] = "ineligible"
+            entry["reason"] = "would improve under policy, but no preserved source snapshot is available"
         entries.append(entry)
-        if outcome == "accepted":
-            prospective = {"iteration": item["iteration"], "metrics": metrics}
-    return {
+        if outcome == "accepted" and snapshot_dir is not None:
+            prospective = {
+                "iteration": item["iteration"],
+                "metrics": metrics,
+                "report_file": str(report_name),
+                "source_snapshot": str(snapshot_dir),
+            }
+    result = {
         "status": "succeeded",
-        "mode": "preview_only",
+        "mode": "applied" if apply_best else "preview_only",
         "selection_policy": policy,
-        "starting_baseline_iteration": baseline["iteration"],
+        "starting_baseline_iteration": initial_baseline["iteration"],
         "recommended_baseline_iteration": prospective["iteration"],
         "iterations": entries,
     }
+    if not apply_best:
+        return result
+    snapshot_dir = Path(str(prospective.get("source_snapshot", "")))
+    if not snapshot_dir.is_dir():
+        raise ValueError("no policy-eligible historical candidate has a preserved source snapshot")
+    _restore_sources_from_snapshot(candidate_manifest_file, snapshot_dir)
+    selected_at = _timestamp()
+    state["baseline"] = {
+        "iteration": prospective["iteration"],
+        "report_file": prospective.get("report_file", initial_baseline.get("report_file", "")),
+        "metrics": prospective["metrics"],
+        "source_snapshot": str(snapshot_dir),
+        "selected_at": selected_at,
+        "selection_policy": policy,
+        "selection_source": "historical_reassessment",
+    }
+    active_phase = _active_phase(state)
+    if active_phase is not None:
+        active_phase["status"] = "closed"
+        active_phase["closed_at"] = selected_at
+        active_phase["closed_reason"] = "historical_rebaseline"
+    state["historical_rebaseline"] = {
+        "iteration": prospective["iteration"],
+        "starting_baseline_iteration": initial_baseline["iteration"],
+        "selection_policy": policy,
+        "applied_at": selected_at,
+    }
+    _upsert_shortlist(
+        state,
+        int(prospective["iteration"]),
+        "accepted",
+        prospective["metrics"],
+        str(prospective.get("report_file", "")),
+    )
+    _refresh_rejected_budget(state)
+    _write_state(candidate_manifest_file, state)
+    result["restored_baseline_iteration"] = prospective["iteration"]
+    result["source_snapshot"] = str(snapshot_dir)
+    return result
 
 
 def _load_or_create_state(candidate_manifest_file: Path) -> dict[str, Any]:
@@ -643,6 +713,72 @@ def _snapshot_baseline_sources(
             raise FileNotFoundError(f"baseline source is missing {source.name}")
         shutil.copyfile(source, snapshot_dir / candidate_file.name)
     return snapshot_dir
+
+
+def _snapshot_evaluated_sources(candidate_manifest_file: Path, iteration: int) -> Path:
+    """Keep the exact candidate that produced an evaluation, regardless of its outcome."""
+    candidate = load_json(candidate_manifest_file)
+    candidate_files = [Path(path) for path in candidate.get("candidate_files", [])]
+    if not candidate_files:
+        raise ValueError("candidate manifest has no candidate files")
+    snapshot_dir = candidate_manifest_file.parent / "snapshots" / f"iteration_{iteration:03d}"
+    snapshot_dir.mkdir(parents=True, exist_ok=True)
+    for candidate_file in candidate_files:
+        if not candidate_file.is_file():
+            raise FileNotFoundError(f"candidate source is missing {candidate_file.name}")
+        shutil.copyfile(candidate_file, snapshot_dir / candidate_file.name)
+    return snapshot_dir
+
+
+def _restore_sources_from_snapshot(candidate_manifest_file: Path, snapshot_dir: Path) -> list[str]:
+    candidate = load_json(candidate_manifest_file)
+    candidate_files = [Path(path) for path in candidate.get("candidate_files", [])]
+    target_files = [Path(path) for path in candidate.get("target_files", [])]
+    if not candidate_files or len(candidate_files) != len(target_files):
+        raise ValueError("candidate manifest has invalid candidate and target files")
+    restored: list[str] = []
+    for candidate_file, target_file in zip(candidate_files, target_files):
+        source = snapshot_dir / candidate_file.name
+        if not source.exists():
+            raise FileNotFoundError(f"baseline snapshot is missing {source.name}")
+        shutil.copyfile(source, candidate_file)
+        shutil.copyfile(source, target_file)
+        restored.append(str(candidate_file))
+    return restored
+
+
+def _history_snapshot(candidate_manifest_file: Path, item: dict[str, Any]) -> Path | None:
+    stored = item.get("source_snapshot")
+    if isinstance(stored, str) and Path(stored).is_dir():
+        return Path(stored)
+    iteration = item.get("iteration")
+    if isinstance(iteration, int):
+        baseline_snapshot = candidate_manifest_file.parent / "baselines" / f"iteration_{iteration:03d}"
+        if baseline_snapshot.is_dir():
+            return baseline_snapshot
+    return None
+
+
+def _initial_history_baseline(
+    candidate_manifest_file: Path,
+    state: dict[str, Any],
+) -> dict[str, Any] | None:
+    candidates = [
+        item for item in state.get("history", [])
+        if item.get("hypothesis_category") == "baseline" and isinstance(item.get("metrics"), dict)
+    ]
+    if candidates:
+        item = min(candidates, key=lambda value: int(value.get("iteration", 0)))
+        snapshot = _history_snapshot(candidate_manifest_file, item)
+        if snapshot is not None:
+            return {
+                "iteration": int(item["iteration"]),
+                "metrics": item["metrics"],
+                "report_file": str(item.get("report_file", "")),
+                "source_snapshot": str(snapshot),
+            }
+    baseline = state.get("baseline")
+    return dict(baseline) if isinstance(baseline, dict) else None
 
 
 def _state_file(candidate_manifest_file: Path) -> Path:
@@ -917,12 +1053,24 @@ def _normalize_selection_policy(policy: Any, source: str) -> dict[str, Any] | No
     primary = metrics_for("primary_metrics")
     if not primary:
         return None
+    profile = str(policy.get("profile", "custom"))
+    guardrails = metrics_for("guardrail_metrics")
+    advisory = metrics_for("advisory_metrics")
+    # Perspective, rotation, and flip peaks commonly contain intentionally dark or
+    # heavily blurred faces. SSIM remains useful context there, but must not veto
+    # substantial pixel-error improvement.
+    if profile == "transform":
+        moved = [metric for metric in guardrails if metric in {"ssim", "peak_ssim"}]
+        guardrails = [metric for metric in guardrails if metric not in moved]
+        advisory = list(dict.fromkeys([*advisory, *moved]))
+        if moved:
+            source = f"{source} (transform SSIM advisory)"
     return {
-        "profile": str(policy.get("profile", "custom")),
+        "profile": profile,
         "source": source,
         "primary_metrics": primary,
-        "guardrail_metrics": metrics_for("guardrail_metrics"),
-        "advisory_metrics": metrics_for("advisory_metrics"),
+        "guardrail_metrics": guardrails,
+        "advisory_metrics": advisory,
     }
 
 
@@ -950,6 +1098,7 @@ def _upsert_history(
     status: str,
     metrics: dict[str, Any],
     report_file: str,
+    source_snapshot: str | None = None,
 ) -> None:
     item = {
         "iteration": iteration,
@@ -959,6 +1108,8 @@ def _upsert_history(
         "report_file": report_file,
         "recorded_at": _timestamp(),
     }
+    if source_snapshot:
+        item["source_snapshot"] = source_snapshot
     state["history"] = [entry for entry in state["history"] if entry.get("iteration") != iteration]
     state["history"].append(item)
     state["history"].sort(key=lambda entry: int(entry["iteration"]))
@@ -1400,7 +1551,13 @@ def _evaluation_instruction(packet: dict[str, Any]) -> str:
     continuation = packet.get("continuation_command")
     continuation_instruction = "Read the resulting controller outcome and stop."
     if isinstance(continuation, str):
-        continuation_instruction = f"""Read the resulting controller outcome. If it is `accepted`, `rejected`, or `tradeoff`, run exactly this continuation command:
+        continuation_instruction = f"""A completed evaluation is not a failure merely because its score is poor:
+
+- `accepted`, `rejected`, and `tradeoff` are all completed controller outcomes.
+- Progress calibration and its linear probe are normal evaluation stages, not failures.
+- Do not stop, restore sources yourself, or start a new phase after any of those outcomes.
+
+Only treat the evaluation as failed when the `candidate-evaluate` command itself fails and does not produce a controller outcome. Read the resulting controller outcome. If it is `accepted`, `rejected`, or `tradeoff`, immediately run exactly this continuation command:
 
 ```powershell
 {continuation}
