@@ -71,13 +71,14 @@ New-effect delivery policy:
 
 Evaluation policy:
 - Carry forward `evaluation_policy.selection` from the transition analysis
-  unless the implementation changes which evidence is meaningful. The allowed
-  metric names are `mse`, `mae`, `ssim`, `motion_similarity`, `peak_mse`, and
-  `peak_ssim`.
-- For rotation, scale, perspective-card, reflection, or flip effects, use
-  `mse`, `mae`, and `peak_mse` as primary metrics. Treat SSIM and dense-flow
-  similarity as advisory because projected content, occlusion, and black
-  midpoints can make them regress despite a better transition.
+  unless the implementation changes which evidence is meaningful. In addition
+  to pixel metrics, transform effects may use
+  `foreground_body_rotation_error`, `foreground_body_scale_error`,
+  `foreground_body_translation_error`, `foreground_body_pivot_error`,
+  `foreground_body_rotation_direction_agreement`, and `geometry_similarity`.
+- For rotation, scale, perspective-card, reflection, or flip effects, make the
+  relevant signed transform errors primary. Keep MSE/MAE/peak metrics advisory
+  unless pixel fidelity is the main deliverable; endpoints remain hard checks.
 - Endpoint correctness is always enforced locally and must not be weakened by
   this policy.
 - Include `evaluation_policy.motion_topology` when the design needs to override

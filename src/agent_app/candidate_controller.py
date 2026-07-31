@@ -36,8 +36,32 @@ SELECTION_METRICS = (
     "motion_similarity",
     "peak_mse",
     "peak_ssim",
+    "foreground_body_rotation_error",
+    "foreground_body_scale_error",
+    "foreground_body_translation_error",
+    "foreground_body_pivot_error",
+    "foreground_body_rotation_direction_agreement",
+    "geometry_similarity",
 )
-LOWER_IS_BETTER_METRICS = {"mse", "mae", "peak_mse"}
+LOWER_IS_BETTER_METRICS = {
+    "mse",
+    "mae",
+    "peak_mse",
+    "foreground_body_rotation_error",
+    "foreground_body_scale_error",
+    "foreground_body_translation_error",
+    "foreground_body_pivot_error",
+}
+METRIC_IMPROVEMENT_THRESHOLDS = {
+    "motion_similarity": MOTION_SIMILARITY_IMPROVEMENT,
+    "foreground_body_rotation_direction_agreement": 0.05,
+    "geometry_similarity": 0.02,
+}
+METRIC_REGRESSION_TOLERANCES = {
+    "motion_similarity": MOTION_SIMILARITY_REGRESSION_TOLERANCE,
+    "foreground_body_rotation_direction_agreement": 0.05,
+    "geometry_similarity": 0.03,
+}
 
 
 def set_candidate_baseline(
@@ -856,6 +880,12 @@ def _metrics_from_report(report: dict[str, Any]) -> dict[str, Any]:
     body_geometry = score.get("foreground_body_transform")
     if isinstance(body_geometry, dict):
         metrics["foreground_body_transform"] = body_geometry
+        metrics.update(_foreground_body_selection_metrics(body_geometry))
+    geometry_summary = score.get("motion_geometry")
+    if isinstance(geometry_summary, dict):
+        similarity = geometry_summary.get("geometry_similarity")
+        if isinstance(similarity, (int, float)):
+            metrics["geometry_similarity"] = float(similarity)
     angular_motion = score.get("angular_motion")
     if isinstance(angular_motion, dict):
         metrics["angular_motion"] = angular_motion
@@ -882,6 +912,82 @@ def _number(payload: dict[str, Any], key: str) -> float:
     if not isinstance(value, (int, float)):
         raise ValueError(f"evaluation report has invalid {key}")
     return float(value)
+
+
+def _foreground_body_selection_metrics(body: dict[str, Any]) -> dict[str, float]:
+    """Flatten phase-specific transform agreement into policy-selectable metrics."""
+    phases = body.get("phases")
+    phase_values = phases.values() if isinstance(phases, dict) else []
+    rotation_errors: list[float] = []
+    scale_errors: list[float] = []
+    translation_errors: list[float] = []
+    pivot_errors: list[float] = []
+    direction_matches = 0
+    direction_observations = 0
+    for phase in phase_values:
+        if not isinstance(phase, dict):
+            continue
+        candidate = phase.get("candidate")
+        reference = phase.get("reference")
+        if not isinstance(candidate, dict) or not isinstance(reference, dict):
+            continue
+        candidate_rotation = _nested_number(candidate, "rotation_field", "mean_degrees")
+        reference_rotation = _nested_number(reference, "rotation_field", "mean_degrees")
+        if candidate_rotation is not None and reference_rotation is not None:
+            rotation_errors.append(abs(candidate_rotation - reference_rotation))
+            if abs(reference_rotation) >= 1.0:
+                direction_observations += 1
+                if candidate_rotation * reference_rotation > 0:
+                    direction_matches += 1
+        candidate_scale = _nested_number(candidate, "radial_scale_field", "mean_ratio")
+        reference_scale = _nested_number(reference, "radial_scale_field", "mean_ratio")
+        if candidate_scale is not None and reference_scale is not None:
+            scale_errors.append(abs(candidate_scale - reference_scale))
+        candidate_translation = _translation_vector(candidate)
+        reference_translation = _translation_vector(reference)
+        if candidate_translation is not None and reference_translation is not None:
+            translation_errors.append(
+                ((candidate_translation[0] - reference_translation[0]) ** 2
+                 + (candidate_translation[1] - reference_translation[1]) ** 2) ** 0.5
+            )
+        candidate_pivot = _pivot_vector(candidate)
+        reference_pivot = _pivot_vector(reference)
+        if candidate_pivot is not None and reference_pivot is not None:
+            pivot_errors.append(
+                ((candidate_pivot[0] - reference_pivot[0]) ** 2
+                 + (candidate_pivot[1] - reference_pivot[1]) ** 2) ** 0.5
+            )
+    result: dict[str, float] = {}
+    if rotation_errors:
+        result["foreground_body_rotation_error"] = sum(rotation_errors) / len(rotation_errors)
+    if scale_errors:
+        result["foreground_body_scale_error"] = sum(scale_errors) / len(scale_errors)
+    if translation_errors:
+        result["foreground_body_translation_error"] = sum(translation_errors) / len(translation_errors)
+    if pivot_errors:
+        result["foreground_body_pivot_error"] = sum(pivot_errors) / len(pivot_errors)
+    if direction_observations:
+        result["foreground_body_rotation_direction_agreement"] = direction_matches / direction_observations
+    return result
+
+
+def _nested_number(payload: dict[str, Any], group: str, key: str) -> float | None:
+    value = payload.get(group)
+    if not isinstance(value, dict) or not isinstance(value.get(key), (int, float)):
+        return None
+    return float(value[key])
+
+
+def _translation_vector(payload: dict[str, Any]) -> tuple[float, float] | None:
+    x = _nested_number(payload, "translation_field", "mean_dx_pixels")
+    y = _nested_number(payload, "translation_field", "mean_dy_pixels")
+    return (x, y) if x is not None and y is not None else None
+
+
+def _pivot_vector(payload: dict[str, Any]) -> tuple[float, float] | None:
+    x = _nested_number(payload, "pivot_field", "x_pixels")
+    y = _nested_number(payload, "pivot_field", "y_pixels")
+    return (x, y) if x is not None and y is not None else None
 
 
 def _endpoints_are_exact(metrics: dict[str, Any]) -> bool:
@@ -975,8 +1081,8 @@ def _selection_deltas(metrics: dict[str, Any], previous: dict[str, Any]) -> dict
             }
         else:
             delta = float(current) - float(baseline)
-            threshold = MOTION_SIMILARITY_IMPROVEMENT if metric == "motion_similarity" else SSIM_IMPROVEMENT
-            tolerance = MOTION_SIMILARITY_REGRESSION_TOLERANCE if metric == "motion_similarity" else SSIM_REGRESSION_TOLERANCE
+            threshold = METRIC_IMPROVEMENT_THRESHOLDS.get(metric, SSIM_IMPROVEMENT)
+            tolerance = METRIC_REGRESSION_TOLERANCES.get(metric, SSIM_REGRESSION_TOLERANCE)
             deltas[metric] = {
                 "baseline": float(baseline), "current": float(current), "delta": delta,
                 "improved": delta > 0.0,
@@ -1038,9 +1144,14 @@ def _resolve_selection_policy(candidate_manifest_file: Path) -> dict[str, Any]:
         return {
             "profile": "transform",
             "source": "artifact_inference",
-            "primary_metrics": ["mse", "mae", "peak_mse"],
+            "primary_metrics": [
+                "foreground_body_rotation_error",
+                "foreground_body_translation_error",
+                "foreground_body_scale_error",
+                "foreground_body_pivot_error",
+            ],
             "guardrail_metrics": [],
-            "advisory_metrics": ["ssim", "peak_ssim", "motion_similarity"],
+            "advisory_metrics": ["mse", "mae", "peak_mse", "ssim", "peak_ssim", "motion_similarity"],
         }
     return _legacy_selection_policy()
 

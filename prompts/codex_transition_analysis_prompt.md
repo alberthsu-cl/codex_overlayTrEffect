@@ -80,13 +80,16 @@ What to extract:
 
 Evaluation policy:
 - Include `evaluation_policy.selection` when the reference makes some metrics
-  diagnostically misleading. Classify metrics as `primary_metrics`,
-  `guardrail_metrics`, or `advisory_metrics` using only these names: `mse`,
-  `mae`, `ssim`, `motion_similarity`, `peak_mse`, `peak_ssim`.
+  diagnostically misleading. Available metrics include pixel metrics
+  (`mse`, `mae`, `ssim`, `motion_similarity`, `peak_mse`, `peak_ssim`) and
+  affine-transform metrics (`foreground_body_rotation_error`,
+  `foreground_body_scale_error`, `foreground_body_translation_error`,
+  `foreground_body_pivot_error`,
+  `foreground_body_rotation_direction_agreement`, `geometry_similarity`).
 - For a single full-frame rotation, scale, perspective-card, or flip effect,
-  use a transform-oriented policy: `mse`, `mae`, and `peak_mse` primary;
-  SSIM and dense-flow similarity advisory. Keep endpoint checks outside this
-  policy: they are always hard local checks.
+  use the relevant affine-transform errors as primary metrics. Keep pixel
+  metrics advisory unless pixel fidelity is the main deliverable. Endpoint
+  checks remain hard local checks.
 - For ordinary dissolves or stable spatial transitions, retain SSIM as a
   primary or guardrail metric. Do not mark motion as a guardrail solely because
   dense flow is available.

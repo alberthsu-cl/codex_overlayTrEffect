@@ -32,6 +32,7 @@ from agent_app.artifacts import build_render_job, validate_effect_design
 from agent_app.cli import main as cli_main
 from agent_app.candidate_controller import (
     _endpoints_are_exact,
+    _metrics_from_report,
     _motion_refinement_priority,
     _normalize_selection_policy,
     _select_outcome,
@@ -56,6 +57,35 @@ from agent_app.codegen import (
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_transform_report_exposes_phase_selection_metrics(self) -> None:
+        endpoints = {
+            "before_transition": {"mse": 0.0, "ssim": 1.0},
+            "after_transition": {"mse": 0.0, "ssim": 1.0},
+        }
+        def transform(rotation: float, dx: float, dy: float) -> dict:
+            return {
+                "rotation_field": {"mean_degrees": rotation},
+                "radial_scale_field": {"mean_ratio": 1.0},
+                "translation_field": {"mean_dx_pixels": dx, "mean_dy_pixels": dy},
+                "pivot_field": {"x_pixels": 960.0, "y_pixels": 540.0},
+            }
+        report = {
+            "score": {
+                "transition_window": {"mse": 10.0, "mae": 2.0, "psnr_db": 30.0, "ssim": 0.8, "frame_start": 0, "frame_end": 1, "frame_count": 2},
+                "endpoint_checks": endpoints,
+                "foreground_body_transform": {
+                    "phases": {
+                        "outgoing": {"candidate": transform(5.0, 2.0, 3.0), "reference": transform(20.0, 10.0, 20.0)},
+                        "incoming": {"candidate": transform(-4.0, 1.0, 4.0), "reference": transform(-18.0, 4.0, 18.0)},
+                    }
+                },
+            }
+        }
+        metrics = _metrics_from_report(report)
+        self.assertAlmostEqual(metrics["foreground_body_rotation_error"], 14.5)
+        self.assertGreater(metrics["foreground_body_translation_error"], 0.0)
+        self.assertEqual(metrics["foreground_body_rotation_direction_agreement"], 1.0)
+
     def test_transform_policy_treats_ssim_as_advisory(self) -> None:
         policy = _normalize_selection_policy(
             {
