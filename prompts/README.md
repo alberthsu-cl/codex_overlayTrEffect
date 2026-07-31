@@ -36,4 +36,18 @@ it does not authorize unrestricted shader generation. `visual_primitives`,
 `new_effect_needed`, and `implementation_status` record whether the observed
 behavior can proceed through the current constrained grammar or requires review.
 
-This folder does not yet contain the pass-2 implementation prompt set. That should be drafted after the new analysis contract is stable and the reusable render-and-score path has been extracted from `harness/`.
+## Refinement Prompt Modules
+
+Candidate iteration requests use a small hierarchical prompt set. The
+controller selects the family module from `transition_structure.json`, so a
+rotation sample does not load sliding or sampler-specific guidance unless it
+is relevant.
+
+- [codex_effect_refinement_prompt.md](./codex_effect_refinement_prompt.md): stable refinement prompt index
+- [base/refinement_contract.md](./base/refinement_contract.md): rules that apply to every candidate
+- [diagnostics/motion_geometry.md](./diagnostics/motion_geometry.md): signed 2D geometry interpretation
+- [diagnostics/optical_flow.md](./diagnostics/optical_flow.md): confidence and flow limitations
+- [diagnostics/edge_content_policy.md](./diagnostics/edge_content_policy.md): optional sampler/edge guidance
+- [families/affine_transform.md](./families/affine_transform.md): rotation, scale, and translation candidates
+- [families/segmented_motion.md](./families/segmented_motion.md): split-line and multi-region candidates
+- [families/general_motion.md](./families/general_motion.md): fallback for other motion types

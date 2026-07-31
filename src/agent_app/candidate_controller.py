@@ -387,6 +387,10 @@ def build_next_iteration_packet(
         "reference_diagnostics_video": str(reference_diagnostic_video) if reference_diagnostic_video else None,
         "reference_edge_diagnostics_file": str(reference_edge_diagnostics) if reference_edge_diagnostics else None,
         "refinement_priority": refinement_priority,
+        "prompt_files": _select_prompt_files(
+            analysis_file,
+            include_edge_diagnostics=bool(reference_edge_diagnostics),
+        ),
         "baseline": state["baseline"],
         "history": state["history"],
         "shortlist": state["shortlist"],
@@ -1472,8 +1476,10 @@ def _continuation_command(
 
 def _refinement_request(packet: dict[str, Any], candidate_dir: Path) -> str:
     allowed = ", ".join(packet["allowed_hypothesis_categories"])
+    prompt_files = packet.get("prompt_files") or ["agent/prompts/codex_effect_refinement_prompt.md"]
+    prompt_lines = "\n".join(f"- {path}" for path in prompt_files)
     return f"""Read:
-- agent/prompts/codex_effect_refinement_prompt.md
+{prompt_lines}
 - {packet['analysis_file']}
 - {packet['design_file']}
 - {packet['packet_file'] if 'packet_file' in packet else 'the iteration packet JSON'}
@@ -1499,6 +1505,39 @@ Create or update exactly one iteration_{packet['iteration']:03d}_*.json record w
 `hypothesis_category`, `visual_hypothesis`, `changed_files`, and expected outcome.
 {_evaluation_instruction(packet)}
 """
+
+
+def _select_prompt_files(analysis_file: Path, include_edge_diagnostics: bool) -> list[str]:
+    """Select only the compact prompt modules relevant to this transition."""
+    files = [
+        "agent/prompts/codex_effect_refinement_prompt.md",
+        "agent/prompts/base/refinement_contract.md",
+        "agent/prompts/diagnostics/motion_geometry.md",
+        "agent/prompts/diagnostics/optical_flow.md",
+    ]
+    try:
+        analysis = load_json(analysis_file)
+    except (OSError, ValueError):
+        analysis = {}
+    transition = analysis.get("transition") if isinstance(analysis, dict) else {}
+    hints = analysis.get("planner_hints") if isinstance(analysis, dict) else {}
+    text = " ".join(
+        str(value).lower()
+        for value in (
+            transition.get("structure_type", "") if isinstance(transition, dict) else "",
+            transition.get("summary", "") if isinstance(transition, dict) else "",
+            hints.get("recommended_effect_family", "") if isinstance(hints, dict) else "",
+        )
+    )
+    if any(token in text for token in ("rotation", "scale", "affine", "rotate", "flip")):
+        files.append("agent/prompts/families/affine_transform.md")
+    elif any(token in text for token in ("slide", "wipe", "split", "region", "band")):
+        files.append("agent/prompts/families/segmented_motion.md")
+    else:
+        files.append("agent/prompts/families/general_motion.md")
+    if include_edge_diagnostics:
+        files.append("agent/prompts/diagnostics/edge_content_policy.md")
+    return files
 
 
 def _refinement_priority_instruction(priority: Any) -> str:
