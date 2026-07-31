@@ -1,0 +1,63 @@
+/goal
+
+Continue refinement for the existing candidate:
+
+D:\AI_Harness\agent\work\samples\sample_05_rotate_01\candidates\Rotate_03
+
+Use the existing FX ID `ModelGenerated\\Rotate_03`. Do not create another FX ID.
+The previous phase is exhausted, so start exactly one new phase named
+`shader_refinement_18` with at most two evaluated iterations and at most two
+rejected iterations:
+
+```powershell
+conda run -n harness python agent/src/main.py candidate-resume `
+  --manifest "D:\AI_Harness\agent\work\samples\sample_05_rotate_01\candidates\Rotate_03\candidate_manifest.json" `
+  --analysis "D:\AI_Harness\agent\work\samples\sample_05_rotate_01\analysis\transition_structure.json" `
+  --design "D:\AI_Harness\agent\work\samples\sample_05_rotate_01\design\effect_design.json" `
+  --phase shader_refinement_18 `
+  --max-iterations 2 `
+  --max-rejected 2
+```
+
+Do not stop after `candidate-resume`. Read and follow the newest iteration
+request and use the embedded evaluation command. A completed `accepted`,
+`rejected`, or `tradeoff` result is not an evaluation failure. Follow the
+embedded continuation command and then the next request until the two-
+iteration budget is exhausted.
+
+For this phase, the required engineering target is actual progress-dependent
+translation and shader geometry, not timing:
+
+1. Read the latest candidate report and reference diagnostics, especially
+   `motion_geometry`, `translation_field`, `pivot_field`, `rotation_field`,
+   `rotation_direction_agreement`, and the comparison video.
+2. Concentrate on output frames 30 through 44. The candidate rotation is wrong
+   in this portion of the transition and the moving image remains anchored at
+   the fixed center. Treat this as a source-code geometry mismatch.
+3. Choose exactly one category: `displacement` unless the transform/pivot
+   model is absent, in which case choose `shader_structure`. Do not choose
+   `timing`, `blur`, or `blend` for this phase.
+4. Update the HLSL with explicit, clearly named progress-dependent translation
+   vectors, for example `kOutgoingTranslation` and `kIncomingTranslation`.
+   Apply the outgoing vector during the first half and the incoming vector
+   during the second half so the image visibly moves out and then moves in.
+   Do not substitute a tiny static center offset for translation. Keep the
+   coordinate convention documented: positive X moves right and positive Y
+   moves down in image space; sampled UV displacement has the opposite sign
+   from visible image movement.
+5. Keep the transform center/pivot explicit and tunable, but use it for the
+   rotation pivot rather than pretending it is the outgoing/incoming movement.
+6. Correct the signed rotation angle used from frame 30 onward. Compare the
+   reference and candidate rotation sign and magnitude; do not hide a reversed
+   rotation with easing or blur. Preserve stable A/B endpoints, class names,
+   shader symbols, FX ID, and candidate workspace boundary.
+7. Record the chosen category, the outgoing/incoming translation vectors, the
+   center/pivot change, the signed rotation change, the frame-30-to-end evidence,
+   changed files, and expected outcome in exactly one iteration record.
+
+Do not edit `render_job.json`, score reports, registration tables, or production
+effects. Do not manually restore sources. If compilation fails, repair the same
+iteration using the generated build-repair request and rerun that evaluation.
+
+Report the final baseline, evaluated iteration numbers, controller status, and
+comparison video path.
