@@ -853,6 +853,9 @@ def _metrics_from_report(report: dict[str, Any]) -> dict[str, Any]:
     geometry = score.get("motion_geometry")
     if isinstance(geometry, dict):
         metrics["motion_geometry"] = geometry
+    body_geometry = score.get("foreground_body_transform")
+    if isinstance(body_geometry, dict):
+        metrics["foreground_body_transform"] = body_geometry
     angular_motion = score.get("angular_motion")
     if isinstance(angular_motion, dict):
         metrics["angular_motion"] = angular_motion
@@ -1367,6 +1370,36 @@ def _motion_refinement_priority(state: dict[str, Any]) -> dict[str, Any]:
                 "geometry": geometry,
                 "recommended_categories": ["displacement", "regions", "shader_structure"],
             }
+    body_geometry = latest["metrics"].get("foreground_body_transform")
+    if isinstance(body_geometry, dict) and body_geometry.get("status") == "estimated":
+        confidence = body_geometry.get("confidence", 0.0)
+        if isinstance(confidence, (int, float)) and confidence >= 0.5:
+            phase_values = body_geometry.get("phases") if isinstance(body_geometry.get("phases"), dict) else {}
+            phase_items = [item for item in phase_values.values() if isinstance(item, dict)]
+            translation_delta = max(
+                [float(item.get("translation_delta_pixels", 0.0)) for item in phase_items] or [0.0]
+            )
+            rotation_delta = max(
+                [float(item.get("rotation_delta_degrees", 0.0)) for item in phase_items] or [0.0]
+            )
+            scale_delta = max(
+                [float(item.get("scale_delta_ratio", 0.0)) for item in phase_items] or [0.0]
+            )
+            if any(
+                isinstance(value, (int, float)) and value > limit
+                for value, limit in (
+                    (translation_delta, 2.0),
+                    (rotation_delta, 10.0),
+                    (scale_delta, 0.15),
+                )
+            ):
+                return {
+                    "level": "high",
+                    "focus": "foreground_body_transform",
+                    "reason": "feature-tracked body geometry disagrees with the reference",
+                    "geometry": body_geometry,
+                    "recommended_categories": ["displacement", "shader_structure"],
+                }
     regional_motion = latest["metrics"].get("regional_motion")
     if isinstance(regional_motion, dict) and regional_motion.get("status") == "direction_mismatch":
         return {
@@ -1602,6 +1635,16 @@ def _refinement_priority_instruction(priority: Any) -> str:
             "Reverse the sign of an existing centered rotation transform under `displacement`; choose "
             "`shader_structure` only if the pivot or rotation transform is missing. Do not change blur, blend, "
             "or region masks until the signed rotation direction is correct."
+        )
+    if priority.get("focus") == "foreground_body_transform":
+        geometry = priority.get("geometry") if isinstance(priority.get("geometry"), dict) else {}
+        phases = geometry.get("phases") if isinstance(geometry.get("phases"), dict) else {}
+        return (
+            "Current refinement priority: foreground-body affine transform. The feature-tracked visible body has a "
+            "phase-specific transform comparison. Read the outgoing, midpoint, and incoming values in `phases`; "
+            "do not average opposed phases into one transform. Use the per-phase body evidence to correct "
+            "the 2D pivot, signed angle, scale, or translation in shader code. Do not treat this as a 3D problem, "
+            "and do not change blur or blend first."
         )
     if priority.get("focus") == "regional_direction":
         regional = priority.get("regional_motion") if isinstance(priority.get("regional_motion"), dict) else {}

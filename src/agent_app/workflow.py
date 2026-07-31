@@ -805,6 +805,9 @@ def score_candidate(
             geometry = _score_motion_geometry(reference, motion_metrics)
             if geometry is not None:
                 score["motion_geometry"] = geometry
+            body_geometry = _score_foreground_body_transform(reference, motion_metrics)
+            if body_geometry is not None:
+                score["foreground_body_transform"] = body_geometry
             angular_motion = _score_angular_motion(
                 reference, motion_metrics, analysis_file=analysis_file, design_file=design_file
             )
@@ -1119,6 +1122,87 @@ def _score_motion_geometry(reference: Path, motion_metrics: dict[str, Any]) -> d
         "pivot_delta_pixels": pivot_delta,
         "geometry_similarity": geometry_similarity,
         "reflection_agreement": reference_flip == candidate_flip,
+    }
+
+
+def _score_foreground_body_transform(reference: Path, motion_metrics: dict[str, Any]) -> dict[str, Any] | None:
+    """Compare feature-tracked body transforms without making them hard gates."""
+    diagnostics_file = reference.parent / "diagnostics" / "reference_motion_diagnostics.json"
+    if not diagnostics_file.exists():
+        return None
+    diagnostics = load_json(diagnostics_file)
+    expected = (diagnostics.get("summary") or {}).get("foreground_body_transform")
+    candidate = motion_metrics.get("foreground_body_transform")
+    expected_phases = (diagnostics.get("summary") or {}).get("foreground_body_transform_phases")
+    candidate_phases = motion_metrics.get("foreground_body_transform_phases")
+    if isinstance(expected_phases, dict) and isinstance(candidate_phases, dict):
+        phases = {
+            phase: _compare_body_transform_phase(expected_phases.get(phase), candidate_phases.get(phase))
+            for phase in ("outgoing", "midpoint", "incoming")
+        }
+        reliable = [item for item in phases.values() if item.get("status") == "estimated"]
+        return {
+            "status": "estimated" if reliable else "advisory_indeterminate",
+            "detector": "orb_feature_similarity",
+            "phases": phases,
+            "reference": expected,
+            "candidate": candidate,
+            "confidence": min([float(item.get("confidence", 0.0)) for item in reliable] or [0.0]),
+        }
+    if not isinstance(expected, dict) or not isinstance(candidate, dict):
+        return None
+    if expected.get("status") != "estimated" or candidate.get("status") != "estimated":
+        return {"status": "advisory_indeterminate", "reference": expected, "candidate": candidate}
+    expected_rotation = float((expected.get("rotation_field") or {}).get("mean_degrees", 0.0))
+    candidate_rotation = float((candidate.get("rotation_field") or {}).get("mean_degrees", 0.0))
+    rotation_delta = abs((candidate_rotation - expected_rotation + 180.0) % 360.0 - 180.0)
+    expected_scale = float((expected.get("radial_scale_field") or {}).get("mean_ratio", 1.0))
+    candidate_scale = float((candidate.get("radial_scale_field") or {}).get("mean_ratio", 1.0))
+    expected_translation = expected.get("translation_field") or {}
+    candidate_translation = candidate.get("translation_field") or {}
+    dx = float(candidate_translation.get("mean_dx_pixels", 0.0)) - float(expected_translation.get("mean_dx_pixels", 0.0))
+    dy = float(candidate_translation.get("mean_dy_pixels", 0.0)) - float(expected_translation.get("mean_dy_pixels", 0.0))
+    translation_delta = math.hypot(dx, dy)
+    expected_flip = bool((expected.get("reflection_or_flip") or {}).get("detected", False))
+    candidate_flip = bool((candidate.get("reflection_or_flip") or {}).get("detected", False))
+    return {
+        "status": "estimated",
+        "detector": "orb_feature_similarity",
+        "reference": expected,
+        "candidate": candidate,
+        "rotation_delta_degrees": rotation_delta,
+        "scale_delta_ratio": abs(candidate_scale - expected_scale),
+        "translation_delta_pixels": translation_delta,
+        "translation_delta_dx_pixels": dx,
+        "translation_delta_dy_pixels": dy,
+        "reflection_agreement": expected_flip == candidate_flip,
+        "confidence": min(float(expected.get("confidence", 0.0)), float(candidate.get("confidence", 0.0))),
+    }
+
+
+def _compare_body_transform_phase(expected: Any, candidate: Any) -> dict[str, Any]:
+    if not isinstance(expected, dict) or not isinstance(candidate, dict):
+        return {"status": "needs_review", "reason": "phase has no reliable body transform"}
+    if expected.get("status") != "estimated" or candidate.get("status") != "estimated":
+        return {"status": "needs_review", "reference": expected, "candidate": candidate}
+    expected_rotation = float((expected.get("rotation_field") or {}).get("mean_degrees", 0.0))
+    candidate_rotation = float((candidate.get("rotation_field") or {}).get("mean_degrees", 0.0))
+    expected_translation = expected.get("translation_field") or {}
+    candidate_translation = candidate.get("translation_field") or {}
+    dx = float(candidate_translation.get("mean_dx_pixels", 0.0)) - float(expected_translation.get("mean_dx_pixels", 0.0))
+    dy = float(candidate_translation.get("mean_dy_pixels", 0.0)) - float(expected_translation.get("mean_dy_pixels", 0.0))
+    expected_scale = float((expected.get("radial_scale_field") or {}).get("mean_ratio", 1.0))
+    candidate_scale = float((candidate.get("radial_scale_field") or {}).get("mean_ratio", 1.0))
+    return {
+        "status": "estimated",
+        "reference": expected,
+        "candidate": candidate,
+        "confidence": min(float(expected.get("confidence", 0.0)), float(candidate.get("confidence", 0.0))),
+        "rotation_delta_degrees": abs((candidate_rotation - expected_rotation + 180.0) % 360.0 - 180.0),
+        "scale_delta_ratio": abs(candidate_scale - expected_scale),
+        "translation_delta_pixels": math.hypot(dx, dy),
+        "translation_delta_dx_pixels": dx,
+        "translation_delta_dy_pixels": dy,
     }
 
 
