@@ -20,6 +20,7 @@ def load_harness_modules(workspace_root: Path):
         create_motion_visualizations,
         score_frame_sequences,
         score_motion,
+        score_salient_centroid_tracking,
     )
     from overlay_harness.effect_catalog import build_effect_catalog
     from overlay_harness.effect_catalog import sync_effect_catalog_sources
@@ -36,6 +37,7 @@ def load_harness_modules(workspace_root: Path):
         "prepare_render_invocation": prepare_render_invocation,
         "score_frame_sequences": score_frame_sequences,
         "score_motion": score_motion,
+        "score_salient_centroid_tracking": score_salient_centroid_tracking,
         "create_motion_visualizations": create_motion_visualizations,
         "analyze_edge_content_policy": analyze_edge_content_policy,
         "analyze_reference_motion": analyze_reference_motion,

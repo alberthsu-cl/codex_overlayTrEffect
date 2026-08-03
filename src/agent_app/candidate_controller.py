@@ -42,6 +42,9 @@ SELECTION_METRICS = (
     "foreground_body_pivot_error",
     "foreground_body_rotation_direction_agreement",
     "geometry_similarity",
+    "salient_centroid_distance_error",
+    "salient_centroid_max_distance_error",
+    "salient_coverage_error",
 )
 LOWER_IS_BETTER_METRICS = {
     "mse",
@@ -51,6 +54,9 @@ LOWER_IS_BETTER_METRICS = {
     "foreground_body_scale_error",
     "foreground_body_translation_error",
     "foreground_body_pivot_error",
+    "salient_centroid_distance_error",
+    "salient_centroid_max_distance_error",
+    "salient_coverage_error",
 }
 METRIC_IMPROVEMENT_THRESHOLDS = {
     "motion_similarity": MOTION_SIMILARITY_IMPROVEMENT,
@@ -881,6 +887,10 @@ def _metrics_from_report(report: dict[str, Any]) -> dict[str, Any]:
     if isinstance(body_geometry, dict):
         metrics["foreground_body_transform"] = body_geometry
         metrics.update(_foreground_body_selection_metrics(body_geometry))
+    centroid_tracking = score.get("salient_centroid_tracking")
+    if isinstance(centroid_tracking, dict):
+        metrics["salient_centroid_tracking"] = centroid_tracking
+        metrics.update(_salient_centroid_selection_metrics(centroid_tracking))
     geometry_summary = score.get("motion_geometry")
     if isinstance(geometry_summary, dict):
         similarity = geometry_summary.get("geometry_similarity")
@@ -968,6 +978,27 @@ def _foreground_body_selection_metrics(body: dict[str, Any]) -> dict[str, float]
         result["foreground_body_pivot_error"] = sum(pivot_errors) / len(pivot_errors)
     if direction_observations:
         result["foreground_body_rotation_direction_agreement"] = direction_matches / direction_observations
+    return result
+
+
+def _salient_centroid_selection_metrics(tracking: dict[str, Any]) -> dict[str, float]:
+    """Expose centroid agreement only when enough unclipped frames were compared.
+
+    A low-confidence trajectory must not reach the selection policy: it would let
+    a candidate be accepted on the strength of two or three usable frames.
+    """
+    if tracking.get("status") != "succeeded":
+        return {}
+    result: dict[str, float] = {}
+    mean_distance = tracking.get("mean_centroid_distance_pixels")
+    if isinstance(mean_distance, (int, float)):
+        result["salient_centroid_distance_error"] = float(mean_distance)
+    max_distance = tracking.get("max_centroid_distance_pixels")
+    if isinstance(max_distance, (int, float)):
+        result["salient_centroid_max_distance_error"] = float(max_distance)
+    coverage_error = tracking.get("mean_coverage_error")
+    if isinstance(coverage_error, (int, float)):
+        result["salient_coverage_error"] = float(coverage_error)
     return result
 
 

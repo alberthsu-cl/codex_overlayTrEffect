@@ -790,6 +790,17 @@ def score_candidate(
                 "reference": reference_policy,
                 "candidate": _candidate_edge_policy(score.get("sampler_repetition")),
             }
+        centroid_scorer = modules.get("score_salient_centroid_tracking")
+        if centroid_scorer is not None:
+            score["salient_centroid_tracking"] = centroid_scorer(
+                candidate=candidate,
+                reference=reference,
+                width=width,
+                height=height,
+                frame_start=score["transition_window"]["frame_start"],
+                frame_end=score["transition_window"]["frame_end"],
+                ffmpeg_path=ffmpeg_path,
+            )
         motion_scorer = modules.get("score_motion")
         if motion_scorer is not None:
             motion_metrics = motion_scorer(
