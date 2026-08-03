@@ -1,11 +1,11 @@
 # Transition Effect Agent
 
-`agent` is the Codex-driven layer for designing and evaluating A/B video
+`agent` is the agent-driven layer for designing and evaluating A/B video
 transitions for the `OverlayTrEngine` runtime.
 
 The project is intentionally split into two responsibilities:
 
-- Codex performs visual interpretation and effect-design decisions.
+- The driving agent performs visual interpretation and effect-design decisions.
 - Local Python and native tools perform frame preparation, rendering, scoring,
   and reporting.
 
@@ -34,7 +34,7 @@ render-and-score path can evaluate candidates reliably.
 
 ### Pass 1: understand the sample
 
-Codex inspects the sample video and produces a structured
+The agent inspects the sample video and produces a structured
 `transition_analysis` artifact containing the visible effect family, timing,
 transition window, evidence, confidence, and limitations.
 
@@ -44,7 +44,7 @@ when the video is ambiguous.
 
 ### Pass 2: render and regress
 
-Codex reads the analysis artifact and produces an `effect_design` artifact. It
+The agent reads the analysis artifact and produces an `effect_design` artifact. It
 chooses the smallest viable strategy:
 
 - reuse an existing effect;
@@ -67,12 +67,12 @@ later as a second opinion without replacing the baseline metrics.
 
 ## Current Status
 
-The repository contains the design contracts and prompts for the Codex portion
-of the workflow, plus the first local execution slice:
+The repository contains the design contracts and prompts for the agent-driven
+portion of the workflow, plus the first local execution slice:
 
-- `prompts/codex_transition_analysis_prompt.md` describes the analysis-only
+- `prompts/agent_transition_analysis_prompt.md` describes the analysis-only
   pass.
-- `prompts/codex_transition_analysis_schema.json` defines the
+- `prompts/agent_transition_analysis_schema.json` defines the
   `transition_analysis` JSON contract.
 - `prompts/effect_design_prompt.md` describes the analysis-to-design decision.
 - `prompts/effect_design_schema.json` defines the `effect_design` JSON
@@ -92,7 +92,7 @@ Run local agent commands through the existing Conda environment:
 conda run -n harness python agent/src/main.py <command>
 ```
 
-Do not rely on `conda activate` persisting between Codex command processes.
+Do not rely on `conda activate` persisting between agent command processes.
 The `harness` environment provides the required Python dependencies and
 `ffmpeg` for PNG scoring. In the command examples below, replace each
 `python agent/src/main.py` prefix with `conda run -n harness python agent/src/main.py`.
@@ -166,7 +166,7 @@ conda run -n harness python agent/src/main.py prepare-sources `
   --frame-count <reference-manifest-frame-count>
 ```
 
-Save Codex output as `analysis/transition_structure.json` and
+Save the agent's output as `analysis/transition_structure.json` and
 `design/effect_design.json`. Place the render job in `jobs/render_job.json`,
 the generated package in `effects/<effect-name>/`, and its refinement workspace
 in `candidates/<effect-name>/`. FX IDs remain global in `OverlayTrEngine`, so
@@ -174,8 +174,8 @@ assign each newly generated effect a unique ID such as
 `ModelGenerated\\SeamlessSliding_03` even when the sample workspaces are
 separate.
 
-The `render` command accepts the existing harness render-job JSON contract. A
-Codex-produced `effect_design.json` is kept alongside the job and is consumed
+The `render` command accepts the existing harness render-job JSON contract. An
+agent-produced `effect_design.json` is kept alongside the job and is consumed
 by `build-job` and the later report step; it is not silently converted into a
 deterministic planner decision.
 
@@ -274,8 +274,8 @@ python agent/src/main.py candidate-init `
   --output-dir agent/work/candidates/SeamlessSliding_02
 ```
 
-Codex may then edit only the candidate C++/HLSL files under that directory.
-Use `prompts/codex_effect_refinement_prompt.md` with the transition analysis,
+The agent may then edit only the candidate C++/HLSL files under that directory.
+Use `prompts/agent_effect_refinement_prompt.md` with the transition analysis,
 effect design, latest render report, score report, and candidate source files.
 The candidate keeps the existing ID:
 
@@ -283,7 +283,7 @@ The candidate keeps the existing ID:
 ModelGenerated\\SeamlessSliding_02
 ```
 
-Build and render the candidate after each Codex edit. Promotion is explicit and
+Build and render the candidate after each agent edit. Promotion is explicit and
 backs up the currently registered source files first:
 
 ```powershell
@@ -349,12 +349,12 @@ When OpenCV motion scoring succeeds, the candidate artifacts also contain
 `motion_diagnostics/frame_XXXX.png` and `motion_diagnostics.mp4`. Each panel
 shows reference flow, candidate flow, and a vector-error heatmap for one pair
 of transition frames. The controller includes the latest diagnostic video in
-the next Codex refinement packet.
+the next agent refinement packet.
 
 ### Stateful refinement loop
 
 The controller keeps candidate-local history in `candidate_state.json`. It does
-not invoke Codex itself; it prepares the bounded iteration packet, tracks the
+not invoke the agent itself; it prepares the bounded iteration packet, tracks the
 accepted baseline, and records the result after the candidate is evaluated.
 
 First select the verified baseline:
@@ -407,8 +407,8 @@ conda run -n harness python agent/src/main.py candidate-start-phase `
 hypothesis category after three rejections in that phase. The full previous
 history remains in each packet for context.
 
-Read the emitted `iteration_XXX_codex_request.md` in the candidate `packets`
-folder and use it as the Codex editing request. Codex edits only the candidate
+Read the emitted `iteration_XXX_agent_request.md` in the candidate `packets`
+folder and use it as the agent editing request. The agent edits only the candidate
 workspace and adds one `iteration_XXX_*.json` record with a
 `hypothesis_category`. Evaluate that edit with `candidate-evaluate --iteration
 XXX`; the controller classifies it as `accepted`, `tradeoff`, or `rejected` and
@@ -479,7 +479,7 @@ commands inside the repository you intend to change.
 
 ## Design Constraints
 
-- Keep Codex artifacts machine-readable and schema-validated.
+- Keep agent artifacts machine-readable and schema-validated.
 - Keep video preparation, rendering, and scoring local and reproducible.
 - Design scoring for arbitrary 2D motion and unknown spatial regions. Do not
   treat a fixed band count or horizontal-only displacement as a general

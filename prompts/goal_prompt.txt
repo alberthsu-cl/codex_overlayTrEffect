@@ -23,8 +23,8 @@ Process:
    diagnostics.
 
 3. Analyze the sample directly using:
-   - agent/prompts/codex_transition_analysis_prompt.md
-   - agent/prompts/codex_transition_analysis_schema.json
+   - agent/prompts/agent_transition_analysis_prompt.md
+   - agent/prompts/agent_transition_analysis_schema.json
    - prepared reference frames and reference motion diagnostics
 
    Save the valid transition_structure JSON under the sample analysis folder.
@@ -64,7 +64,7 @@ Process:
    first iteration request.
 
 9. For up to three refinement iterations:
-   - read and follow the newest iteration_NNN_codex_request.md;
+   - read and follow the newest iteration_NNN_agent_request.md;
    - edit only that candidate workspace;
    - run its embedded candidate-evaluate command;
    - after an accepted, rejected, or tradeoff outcome, run candidate-continue;

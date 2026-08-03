@@ -33,8 +33,8 @@ Run at most six additional evaluated iterations. Do not create another FX ID.
 
    `candidate-resume` only prepares the first request. Do not stop there.
 2. For each generated request:
-   - Read the newest `iteration_NNN_codex_request.md` in the candidate packet folder.
-   - Edit only the candidate workspace in the current Codex session.
+   - Read the newest `iteration_NNN_agent_request.md` in the candidate packet folder.
+   - Edit only the candidate workspace in the current agent session.
    - Run the embedded `candidate-evaluate` command.
    - Read the controller outcome.
    - Run the embedded `candidate-continue` command after `accepted`, `rejected`,

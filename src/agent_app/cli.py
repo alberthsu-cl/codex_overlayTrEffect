@@ -385,7 +385,7 @@ def _default_renderer(workspace_root: Path) -> str | None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Codex-driven transition effect workflow")
+    parser = argparse.ArgumentParser(description="Agent-driven transition effect workflow")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     sample_init = subparsers.add_parser(
@@ -508,7 +508,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     build_job = subparsers.add_parser(
         "build-job",
-        help="build an existing-effect render job from Codex analysis and design artifacts",
+        help="build an existing-effect render job from agent analysis and design artifacts",
     )
     build_job.add_argument("--analysis", required=True)
     build_job.add_argument("--design", required=True)
@@ -687,7 +687,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     candidate_next = subparsers.add_parser(
         "candidate-next",
-        help="prepare the next refinement packet and Codex request",
+        help="prepare the next refinement packet and agent request",
     )
     candidate_next.add_argument("--manifest", required=True)
     candidate_next.add_argument("--analysis", required=True)
@@ -697,7 +697,7 @@ def build_parser() -> argparse.ArgumentParser:
     candidate_next.add_argument(
         "--evaluate-after-edit",
         action="store_true",
-        help="include one configured candidate evaluation command in the generated Codex request",
+        help="include one configured candidate evaluation command in the generated agent request",
     )
 
     candidate_continue = subparsers.add_parser(

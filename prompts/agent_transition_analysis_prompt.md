@@ -1,6 +1,6 @@
 # Transition Analysis Prompt
 
-Use this prompt when Codex should inspect a local sample transition video and emit a structured JSON artifact for the new `agent/` flow.
+Use this prompt when the agent should inspect a local sample transition video and emit a structured JSON artifact for the new `agent/` flow.
 
 This is pass 1 of the new design:
 

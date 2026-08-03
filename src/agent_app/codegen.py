@@ -233,7 +233,7 @@ def _generate_source_variant(
 
 
 def _resolve_variant_template_path(template_root: Path, source_name: str) -> Path:
-    """Accept template-relative paths and the repo-relative form Codex may emit."""
+    """Accept template-relative paths and the repo-relative form the agent may emit."""
     relative_path = Path(source_name)
     direct_path = template_root / relative_path
     if direct_path.exists():
@@ -401,7 +401,7 @@ def initialize_candidate(
     output_dir: Path,
     force: bool = False,
 ) -> dict[str, Any]:
-    """Copy a registered effect into an isolated workspace for Codex edits."""
+    """Copy a registered effect into an isolated workspace for agent edits."""
     manifest = load_json(manifest_file)
     registration = manifest.get("registration")
     if not isinstance(registration, dict):

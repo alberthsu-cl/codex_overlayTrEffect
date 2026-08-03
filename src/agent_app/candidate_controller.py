@@ -370,7 +370,7 @@ def build_next_iteration_packet(
     reference_edge_diagnostics = _reference_edge_diagnostics(analysis_file)
     refinement_priority = _motion_refinement_priority(state)
     packet_file = candidate_dir / "packets" / f"iteration_{next_iteration:03d}_packet.json"
-    prompt_file = candidate_dir / "packets" / f"iteration_{next_iteration:03d}_codex_request.md"
+    prompt_file = candidate_dir / "packets" / f"iteration_{next_iteration:03d}_agent_request.md"
     candidate = load_json(candidate_manifest_file)
     evaluation_command = None
     continuation_command = None
@@ -1631,7 +1631,7 @@ def _continuation_command(
 
 def _refinement_request(packet: dict[str, Any], candidate_dir: Path) -> str:
     allowed = ", ".join(packet["allowed_hypothesis_categories"])
-    prompt_files = packet.get("prompt_files") or ["agent/prompts/codex_effect_refinement_prompt.md"]
+    prompt_files = packet.get("prompt_files") or ["agent/prompts/agent_effect_refinement_prompt.md"]
     prompt_lines = "\n".join(f"- {path}" for path in prompt_files)
     return f"""Read:
 {prompt_lines}
@@ -1665,7 +1665,7 @@ Create or update exactly one iteration_{packet['iteration']:03d}_*.json record w
 def _select_prompt_files(analysis_file: Path, include_edge_diagnostics: bool) -> list[str]:
     """Select only the compact prompt modules relevant to this transition."""
     files = [
-        "agent/prompts/codex_effect_refinement_prompt.md",
+        "agent/prompts/agent_effect_refinement_prompt.md",
         "agent/prompts/base/refinement_contract.md",
         "agent/prompts/diagnostics/motion_geometry.md",
         "agent/prompts/diagnostics/optical_flow.md",
@@ -1816,7 +1816,7 @@ For reference, the continuation performed by the command is:
 {continuation}
 ```
 
-The continuation command restores the selected baseline when required and creates the next Codex request. If the parent request asks for a bounded multi-iteration refinement run, read and execute that next request in the same Codex session. Otherwise, stop after the continuation command returns."""
+The continuation command restores the selected baseline when required and creates the next agent request. If the parent request asks for a bounded multi-iteration refinement run, read and execute that next request in the same agent session. Otherwise, stop after the continuation command returns."""
     build_failure_instruction = f"""
 
 If `candidate-evaluate` fails during the build for iteration {packet['iteration']}, do not start a new phase or skip the iteration. Read the generated `iteration_{packet['iteration']:03d}_build_repair_*.md` request, repair the compilation issue in the candidate workspace, and rerun `candidate-evaluate` for iteration {packet['iteration']} using a new backup directory. The controller restores registered target files automatically; keep the existing FX ID."""

@@ -117,7 +117,7 @@ def build_render_job(
     design_issues = validate_effect_design(design)
     if analysis_issues or design_issues:
         details = analysis_issues + design_issues
-        raise ValueError("invalid Codex artifacts: " + "; ".join(details))
+        raise ValueError("invalid agent artifacts: " + "; ".join(details))
 
     decision = design["decision"]
     action = decision["action"]

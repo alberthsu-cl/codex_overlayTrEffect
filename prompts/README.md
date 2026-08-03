@@ -11,18 +11,18 @@ The old end-to-end goal prompts were removed because they were tied to the previ
 
 The new direction is narrower and easier to control:
 
-1. Codex analyzes the sample transition video
+1. the agent analyzes the sample transition video
 2. local Python prepares frames, invokes rendering, and scores results
 3. implementation or effect generation happens only after the analysis artifact is stable
 
 ## Files
 
-- [codex_transition_analysis_prompt.md](./codex_transition_analysis_prompt.md): pass-1 prompt for video analysis only
-- [codex_transition_analysis_schema.json](./codex_transition_analysis_schema.json): strict schema for the analysis artifact
+- [agent_transition_analysis_prompt.md](./agent_transition_analysis_prompt.md): pass-1 prompt for video analysis only
+- [agent_transition_analysis_schema.json](./agent_transition_analysis_schema.json): strict schema for the analysis artifact
 
 ## How To Use
 
-Use the analysis prompt and schema when you want Codex to inspect a sample transition video and return a machine-readable `transition_analysis` artifact.
+Use the analysis prompt and schema when you want the agent to inspect a sample transition video and return a machine-readable `transition_analysis` artifact.
 
 That artifact is intended to drive later steps such as:
 
@@ -43,7 +43,7 @@ controller selects the family module from `transition_structure.json`, so a
 rotation sample does not load sliding or sampler-specific guidance unless it
 is relevant.
 
-- [codex_effect_refinement_prompt.md](./codex_effect_refinement_prompt.md): stable refinement prompt index
+- [agent_effect_refinement_prompt.md](./agent_effect_refinement_prompt.md): stable refinement prompt index
 - [base/refinement_contract.md](./base/refinement_contract.md): rules that apply to every candidate
 - [diagnostics/motion_geometry.md](./diagnostics/motion_geometry.md): signed 2D geometry interpretation
 - [diagnostics/optical_flow.md](./diagnostics/optical_flow.md): confidence and flow limitations

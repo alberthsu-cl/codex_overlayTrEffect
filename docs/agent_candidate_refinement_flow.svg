@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1120" viewBox="0 0 1800 1120" role="img" aria-labelledby="title desc">
-  <title id="title">Codex-Driven Flow</title>
-  <desc id="desc">Codex interprets and edits a transition candidate. Command-driven local tools prepare inputs, build, render, score, report, and promote the same FX ID.</desc>
+  <title id="title">Agent-Driven Flow</title>
+  <desc id="desc">The agent interprets and edits a transition candidate. Command-driven local tools prepare inputs, build, render, score, report, and promote the same FX ID.</desc>
   <defs>
     <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="userSpaceOnUse">
       <path d="M0,0 L12,6 L0,12 Z" fill="#233044"/>
@@ -24,11 +24,11 @@
   </defs>
 
   <rect class="bg" x="0" y="0" width="1800" height="1120"/>
-  <text class="title" x="50" y="52">Codex-Driven Flow</text>
-  <text class="small" x="50" y="82">Motion diagnostics guide Codex interpretation; one registered FX ID is refined in an isolated workspace.</text>
+  <text class="title" x="50" y="52">Agent-Driven Flow</text>
+  <text class="small" x="50" y="82">Motion diagnostics guide the agent's interpretation; one registered FX ID is refined in an isolated workspace.</text>
 
   <rect class="codex" x="1040" y="32" width="210" height="42"/>
-  <text class="legend" x="1145" y="59" text-anchor="middle">Codex inference / editing</text>
+  <text class="legend" x="1145" y="59" text-anchor="middle">Agent inference / editing</text>
   <rect class="command" x="1270" y="32" width="210" height="42"/>
   <text class="legend" x="1375" y="59" text-anchor="middle">Command-driven tools</text>
   <rect class="artifact" x="1500" y="32" width="210" height="42"/>
@@ -46,7 +46,7 @@
   <text class="small" x="382" y="255" text-anchor="middle">dense flow + regions</text>
 
   <rect class="codex" x="505" y="185" width="205" height="105"/>
-  <text class="text" x="607" y="225" text-anchor="middle">Codex video</text>
+  <text class="text" x="607" y="225" text-anchor="middle">Agent video</text>
   <text class="text" x="607" y="253" text-anchor="middle">analysis</text>
 
   <rect class="artifact" x="730" y="185" width="205" height="105"/>
@@ -58,7 +58,7 @@
   <text class="small" x="1057" y="255" text-anchor="middle">A/B frames + reference</text>
 
   <rect class="codex" x="1180" y="185" width="205" height="105"/>
-  <text class="text" x="1282" y="225" text-anchor="middle">Codex effect</text>
+  <text class="text" x="1282" y="225" text-anchor="middle">Agent effect</text>
   <text class="text" x="1282" y="253" text-anchor="middle">design and tuning</text>
 
   <rect class="artifact" x="1465" y="185" width="205" height="105"/>
@@ -88,7 +88,7 @@
   <text class="small" x="780" y="520" text-anchor="middle">agent/work/candidates/...</text>
 
   <rect class="codex" x="955" y="450" width="250" height="105"/>
-  <text class="text" x="1080" y="490" text-anchor="middle">Codex edits</text>
+  <text class="text" x="1080" y="490" text-anchor="middle">Agent edits</text>
   <text class="text" x="1080" y="520" text-anchor="middle">C++ / HLSL candidate</text>
 
   <rect class="artifact" x="1255" y="450" width="250" height="105"/>
@@ -136,12 +136,12 @@
   <path class="line" d="M1505 767 H1555"/>
 
   <path class="loop" d="M1380 715 V635 H1080 V555"/>
-  <text class="caption" x="1110" y="625" text-anchor="middle">Codex reads the report and refines the candidate</text>
+  <text class="caption" x="1110" y="625" text-anchor="middle">The agent reads the report and refines the candidate</text>
 
   <path class="line" d="M1645 820 V865 H1645 V955"/>
   <rect class="artifact" x="1505" y="955" width="280" height="80"/>
   <text class="text" x="1645" y="988" text-anchor="middle">Validated active FX ID</text>
   <text class="small" x="1645" y="1016" text-anchor="middle">ModelGenerated\\CandidateFxID_xx</text>
 
-  <text class="caption" x="55" y="1080">Codex owns interpretation and source edits. Commands own preparation, build, rendering, scoring, backups, and reports.</text>
+  <text class="caption" x="55" y="1080">The agent owns interpretation and source edits. Commands own preparation, build, rendering, scoring, backups, and reports.</text>
 </svg>

@@ -1,2 +1,2 @@
-"""Codex-driven transition effect evaluation workflow."""
+"""Agent-driven transition effect evaluation workflow."""
 

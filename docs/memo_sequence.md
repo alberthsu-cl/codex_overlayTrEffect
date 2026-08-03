@@ -59,8 +59,8 @@ conda run -n harness python agent/src/main.py prepare `
 ## 3. Generate Reference Motion Evidence
 
 Create a deterministic, confidence-qualified flow/region diagnostic before
-asking Codex to analyze the sample. It is evidence only; it does not replace
-Codex visual inspection or decide the transition window.
+asking the agent to analyze the sample. It is evidence only; it does not replace
+the agent's visual inspection or decide the transition window.
 
 ```powershell
 conda run -n harness python agent/src/main.py reference-diagnostics `
@@ -87,12 +87,12 @@ dominant motion axis, and confidence-qualified transformation geometry. These
 measurements are generic evidence for all transition types; a non-motion effect
 may report them as unavailable or low confidence.
 
-## 4. Ask Codex to Analyze the Sample
+## 4. Ask the Agent to Analyze the Sample
 
 Use:
 
-- `agent/prompts/codex_transition_analysis_prompt.md`
-- `agent/prompts/codex_transition_analysis_schema.json`
+- `agent/prompts/agent_transition_analysis_prompt.md`
+- `agent/prompts/agent_transition_analysis_schema.json`
 - the original video
 - `agent/work/samples/<sample-id>/reference`
 - `agent/work/samples/<sample-id>/diagnostics/reference_motion_diagnostics.json`
@@ -134,7 +134,7 @@ For an external, trimmed, or non-endpoint-stable video, use `--analysis` and
 original-video frames. Use `--start-frame` and `--end-frame` only when their
 values are known original source-video indices.
 
-## 6. Ask Codex for the Effect Design
+## 6. Ask the Agent for the Effect Design
 
 Use:
 
@@ -142,7 +142,7 @@ Use:
 - `agent/prompts/effect_design_schema.json`
 - `analysis/transition_structure.json`
 
-For a sample that must produce a new shader, add this policy to the Codex
+For a sample that must produce a new shader, add this policy to the agent
 request before asking for the JSON:
 
 ```text
@@ -251,7 +251,7 @@ Current generator limits:
 
 ### Create and Evaluate the Candidate
 
-Initialize the isolated candidate after registration. Codex edits only this
+Initialize the isolated candidate after registration. The agent edits only this
 candidate directory during refinement:
 
 ```powershell
@@ -363,22 +363,22 @@ run a new baseline evaluation after they are corrected.
 
 If `candidate-evaluate` stops during MSBuild, the controller restores the
 registered target sources and DLL, keeps the failed candidate sources for
-repair, and writes a build-failure report plus a Codex repair request under the
+repair, and writes a build-failure report plus an agent repair request under the
 candidate's `packets/` and `backups/` folders. Read the newest
-`iteration_<N>_build_repair_*.md`, let Codex fix compilation only, then rerun
+`iteration_<N>_build_repair_*.md`, let the agent fix compilation only, then rerun
 `candidate-evaluate` for the same iteration with a new `--backup-dir`.
 Do not run `candidate-continue`, create a new phase, or skip to a new iteration
 until that same iteration builds and is evaluated.
 
 ### Single-Session Refinement Loop
 
-The Python harness does not launch another Codex process. It prepares packets,
+The Python harness does not launch another agent process. It prepares packets,
 evaluates renders, records controller state, and generates the next request.
-The current Codex session performs the shader edit and runs the commands in the
+The current agent session performs the shader edit and runs the commands in the
 request.
 
 For a new bounded refinement phase, run `candidate-resume` once. Then repeat
-the request/evaluate/continue sequence manually in the same Codex session:
+the request/evaluate/continue sequence manually in the same agent session:
 
 ```powershell
 conda run -n harness python agent/src/main.py candidate-resume `
@@ -391,7 +391,7 @@ conda run -n harness python agent/src/main.py candidate-resume `
 ```
 
 `candidate-resume` only creates the first request. Give the newest
-`iteration_NNN_codex_request.md` to the current Codex session, let it edit the
+`iteration_NNN_agent_request.md` to the current agent session, let it edit the
 candidate, run its embedded `candidate-evaluate` command, read the outcome, and
 run `candidate-continue`. Continue with the next generated request. Never
 reuse a phase name.
@@ -462,7 +462,7 @@ conda run -n harness python agent/src/main.py candidate-start-phase `
 
 3. Store the evaluation profile once for this candidate. It captures the
 deterministic evaluation inputs that otherwise would have to be appended to
-every Codex request:
+every agent request:
 
 ```powershell
 conda run -n harness python agent/src/main.py candidate-set-evaluation-profile `
@@ -480,7 +480,7 @@ conda run -n harness python agent/src/main.py candidate-set-evaluation-profile `
 
 4. Generate the next packet *after* the phase starts. The `--evaluate-after-edit`
 option writes an evaluation command and a continuation command into the generated
-Codex request. Give `packets/iteration_001_codex_request.md` to Codex. Codex
+agent request. Give `packets/iteration_001_agent_request.md` to the agent. The agent
 edits the candidate workspace, runs the supplied evaluation, and asks the local
 controller to prepare the next request:
 
@@ -516,13 +516,13 @@ priority over the transition analysis policy; otherwise the scorer infers it
 from segmented structure such as bands, quadrants, or multiple regions. Use
 `disabled` for non-segmented effects, `advisory` for useful but uncertain flow
 evidence, and `hard` only for an explicit strict deliverable requirement.
-Advisory topology remains available to guide Codex but does not reject a
+Advisory topology remains available to guide the agent but does not reject a
 candidate.
 
 5. When the scored outcome is `accepted`, `rejected`, or `tradeoff`, the request
 invokes `candidate-continue`. It restores the selected baseline for `rejected`
-or `tradeoff` and returns the next `prompt_file`. Give that new request to Codex.
-Codex stops after each continuation; it does not edit more than one candidate
+or `tradeoff` and returns the next `prompt_file`. Give that new request to the agent.
+The agent stops after each continuation; it does not edit more than one candidate
 iteration per request.
 
 - visually acceptable but not diagnostically accepted: use
@@ -534,7 +534,7 @@ closed by human review, or reaches its configured budget.
 
 ## Automation Target
 
-The current workflow deliberately has manual Codex handoffs for analysis,
+The current workflow deliberately has manual agent handoffs for analysis,
 effect design, and shader refinement. Local commands already automate frame
 preparation, build, render, scoring, artifact creation, and controller state.
 
@@ -543,18 +543,18 @@ The intended future flow is:
 ```text
 sample video
   -> local provisional transition-window detection
-  -> Codex verifies or repairs the window and stable A/B source choices
+  -> the agent verifies or repairs the window and stable A/B source choices
   -> local manual-window preparation and frame-mapping validation
-  -> Codex effect design with a new ModelGenerated FX ID
+  -> the agent designs the effect with a new ModelGenerated FX ID
   -> local generation, registration, build, render, and baseline scoring
-  -> bounded Codex shader refinement iterations with one local evaluation each
+  -> bounded agent shader refinement iterations with one local evaluation each
   -> controller decision after every iteration
   -> human acceptance or explicit promotion
 ```
 
 Automation requirements that are not complete yet:
 
-- Codex must be invoked by an explicit controller integration rather than a
+- The agent must be invoked by an explicit controller integration rather than a
   manual chat request.
 - The analysis contract needs structured stable source-A and source-B frame
   selections, plus a window-review status, rather than keeping those choices
@@ -562,9 +562,9 @@ Automation requirements that are not complete yet:
 - The controller needs to stop on invalid preparation inputs, repair the
   reference before scoring, and start a new baseline instead of treating the
   correction as a shader iteration.
-- A future controller can invoke Codex itself, rather than requiring the user
+- A future controller can invoke the agent itself, rather than requiring the user
   to submit each generated packet. The current bounded mode still requires the
-  user to provide the generated request to Codex.
+  user to provide the generated request to the agent.
 
 ### Correct Renderer Progress Alignment
 
@@ -583,10 +583,10 @@ candidate shader
   -> aligned evaluation and scoring
 ```
 
-The controller, not Codex or the user, owns `render_job.json`. It may update
+The controller, not the agent or the user, owns `render_job.json`. It may update
 the generated `render.progress_schedule` after a probe, and it must record the
 detected candidate interval, confidence, and fallback reason with the
-evaluation artifacts. Codex may request recalibration in its iteration record
+evaluation artifacts. The agent may request recalibration in its iteration record
 after a timing or shader-structure edit, but must not edit the job directly.
 
 Retain the most recent calibrated schedule for region, displacement, blur, and
@@ -598,7 +598,7 @@ Only change shader timing when the aligned comparison still has incorrect
 onset, peak motion, or settling *within* the reference transition window.
 
 Until automatic probe calibration is implemented, use the following temporary
-manual fallback. Ask Codex to review the side-by-side comparison and report the
+manual fallback. Ask the agent to review the side-by-side comparison and report the
 reference transition frame range plus the candidate shader's visible active
 progress range.
 

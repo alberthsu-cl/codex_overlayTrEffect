@@ -203,7 +203,7 @@ def analyze_reference_diagnostics(
     frame_end: int | None = None,
     ffmpeg_path: str | None = None,
 ) -> dict[str, Any]:
-    """Create deterministic reference-only motion evidence for Codex review."""
+    """Create deterministic reference-only motion evidence for agent review."""
     if output_dir.exists() and output_dir.is_file():
         raise ValueError(f"reference diagnostics output must be a directory: {output_dir}")
     if output_dir.suffix.lower() in {".json", ".mp4", ".png"}:
@@ -1594,7 +1594,7 @@ def evaluate_candidate(
                 stdout=build.stdout,
                 stderr=build.stderr,
             )
-            # Keep the failed candidate sources for Codex to repair, but do not
+            # Keep the failed candidate sources for the agent to repair, but do not
             # leave the registered target or production DLL in a broken state.
             for target_path, backup_path in backups:
                 shutil.copyfile(backup_path, target_path)
@@ -1602,7 +1602,7 @@ def evaluate_candidate(
                 shutil.copyfile(dll_backup, dll_path)
             raise RuntimeError(
                 "msbuild failed; target sources were restored. "
-                f"Codex repair request: {repair_request}\n"
+                f"Agent repair request: {repair_request}\n"
                 f"Build failure report: {failure_file}\n"
                 f"{build.stdout}\n{build.stderr}"
             )
@@ -1747,7 +1747,7 @@ def _write_build_failure_repair_artifacts(
     stdout: str,
     stderr: str,
 ) -> tuple[Path, Path]:
-    """Persist compiler evidence and a Codex-only repair request after a failed build."""
+    """Persist compiler evidence and an agent-only repair request after a failed build."""
     failure_dir = backup_dir / "build_failure"
     failure_dir.mkdir(parents=True, exist_ok=True)
     failure_file = failure_dir / "build_failure.json"
