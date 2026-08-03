@@ -98,7 +98,15 @@ class WorkflowTests(unittest.TestCase):
         )
 
         self.assertIsNotNone(policy)
-        self.assertEqual(policy["guardrail_metrics"], [])
+        self.assertEqual(
+            policy["guardrail_metrics"],
+            [
+                "foreground_body_rotation_direction_agreement",
+                "foreground_body_rotation_error",
+                "foreground_body_translation_error",
+                "foreground_body_scale_error",
+            ],
+        )
         self.assertEqual(policy["advisory_metrics"], ["motion_similarity", "peak_ssim"])
 
     def test_transform_selection_accepts_image_error_improvement_without_flow_guardrails(self) -> None:

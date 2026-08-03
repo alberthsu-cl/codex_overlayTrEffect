@@ -1188,6 +1188,17 @@ def _normalize_selection_policy(policy: Any, source: str) -> dict[str, Any] | No
         moved = [metric for metric in guardrails if metric in {"ssim", "peak_ssim"}]
         guardrails = [metric for metric in guardrails if metric not in moved]
         advisory = list(dict.fromkeys([*advisory, *moved]))
+        if "foreground_body_rotation_direction_agreement" not in primary:
+            guardrails = list(dict.fromkeys([
+                *guardrails,
+                "foreground_body_rotation_direction_agreement",
+            ]))
+        guardrails = list(dict.fromkeys([
+            *guardrails,
+            "foreground_body_rotation_error",
+            "foreground_body_translation_error",
+            "foreground_body_scale_error",
+        ]))
         if moved:
             source = f"{source} (transform SSIM advisory)"
     return {
