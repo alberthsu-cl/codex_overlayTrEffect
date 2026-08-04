@@ -45,6 +45,8 @@ SELECTION_METRICS = (
     "salient_centroid_distance_error",
     "salient_centroid_max_distance_error",
     "salient_coverage_error",
+    "salient_rotation_error",
+    "salient_rotation_max_error",
 )
 LOWER_IS_BETTER_METRICS = {
     "mse",
@@ -57,6 +59,8 @@ LOWER_IS_BETTER_METRICS = {
     "salient_centroid_distance_error",
     "salient_centroid_max_distance_error",
     "salient_coverage_error",
+    "salient_rotation_error",
+    "salient_rotation_max_error",
 }
 TRANSLATION_DELTA_LIMIT_PIXELS = 2.0
 PIVOT_DELTA_LIMIT_PIXELS = 8.0
@@ -72,6 +76,13 @@ PIVOT_CONDITIONING_MIN_SCALE_DELTA = 0.01
 # A signed-direction disagreement has no magnitude to scale, but it is a
 # qualitative error, so it outranks a merely-over-threshold magnitude.
 DIRECTION_DISAGREEMENT_SEVERITY = 3.0
+# Severity is preferably measured against the reference's own magnitude: an error
+# is serious when it is a large fraction of the motion actually present, which is
+# comparable across pixels, degrees and ratios in a way raw thresholds are not.
+RELATIVE_ERROR_LIMIT = 0.25
+RELATIVE_ROTATION_FLOOR_DEGREES = 1.0
+RELATIVE_SCALE_FLOOR_RATIO = 0.01
+RELATIVE_TRANSLATION_FLOOR_PIXELS = 1.0
 # Consecutive tradeoffs mean every hypothesis is moving some metric while
 # regressing another - the signature of tuning inside measurement noise.  After
 # this many in a row, the next request demands a structural re-derivation
@@ -445,6 +456,9 @@ def build_next_iteration_packet(
         # can still be the real defect when thresholds across different units are
         # not equally calibrated.
         "refinement_findings": refinement_findings,
+        # Measured per-frame reference targets, so an iteration can fit a curve to
+        # the reference instead of nudging a coefficient and re-measuring.
+        "reference_curves": _reference_curves(state),
         "prompt_files": _select_prompt_files(
             analysis_file,
             include_edge_diagnostics=bool(reference_edge_diagnostics),
@@ -924,6 +938,10 @@ def _metrics_from_report(report: dict[str, Any]) -> dict[str, Any]:
     if isinstance(centroid_tracking, dict):
         metrics["salient_centroid_tracking"] = centroid_tracking
         metrics.update(_salient_centroid_selection_metrics(centroid_tracking))
+    rotation_tracking = score.get("salient_rotation_tracking")
+    if isinstance(rotation_tracking, dict):
+        metrics["salient_rotation_tracking"] = rotation_tracking
+        metrics.update(_salient_rotation_selection_metrics(rotation_tracking))
     geometry_summary = score.get("motion_geometry")
     if isinstance(geometry_summary, dict):
         similarity = geometry_summary.get("geometry_similarity")
@@ -1032,6 +1050,20 @@ def _salient_centroid_selection_metrics(tracking: dict[str, Any]) -> dict[str, f
     coverage_error = tracking.get("mean_coverage_error")
     if isinstance(coverage_error, (int, float)):
         result["salient_coverage_error"] = float(coverage_error)
+    return result
+
+
+def _salient_rotation_selection_metrics(tracking: dict[str, Any]) -> dict[str, float]:
+    """Expose absolute-turn agreement only when the unwrap chain was reliable."""
+    if tracking.get("status") != "succeeded":
+        return {}
+    result: dict[str, float] = {}
+    mean_error = tracking.get("mean_absolute_rotation_error_degrees")
+    if isinstance(mean_error, (int, float)):
+        result["salient_rotation_error"] = float(mean_error)
+    max_error = tracking.get("max_absolute_rotation_error_degrees")
+    if isinstance(max_error, (int, float)):
+        result["salient_rotation_max_error"] = float(max_error)
     return result
 
 
@@ -1476,42 +1508,89 @@ def _magnitude_findings(metrics: dict[str, Any]) -> list[dict[str, Any]]:
         if isinstance(confidence, (int, float)) and confidence >= 0.5:
             phase_values = body_geometry.get("phases") if isinstance(body_geometry.get("phases"), dict) else {}
             phase_items = [item for item in phase_values.values() if isinstance(item, dict)]
-            for key, limit, focus, reason in (
+            for key, limit, focus, reason, magnitude in (
                 (
                     "rotation_delta_degrees",
                     ROTATION_DELTA_LIMIT_DEGREES,
                     "transform_rotation",
                     "feature-tracked body rotation disagrees with the reference",
+                    _reference_rotation_magnitude,
                 ),
                 (
                     "scale_delta_ratio",
                     SCALE_DELTA_LIMIT_RATIO,
                     "transform_scale",
                     "feature-tracked body scale disagrees with the reference",
+                    _reference_scale_magnitude,
                 ),
                 (
                     "translation_delta_pixels",
                     TRANSLATION_DELTA_LIMIT_PIXELS,
                     "foreground_body_transform",
                     "feature-tracked body position disagrees with the reference",
+                    _reference_translation_magnitude,
                 ),
             ):
-                worst = max(
-                    [abs(float(item.get(key, 0.0))) for item in phase_items] or [0.0]
+                worst_item, worst = None, 0.0
+                for item in phase_items:
+                    value = abs(float(item.get(key, 0.0)))
+                    if value >= worst:
+                        worst_item, worst = item, value
+                if worst <= limit or worst_item is None:
+                    continue
+                observed: dict[str, Any] = {key: worst, "limit": limit}
+                # Prefer severity relative to how much the reference itself moves.
+                # Absolute-over-threshold ranking is only as fair as the thresholds,
+                # and a tight pixel limit next to a loose degree limit silently
+                # ranked a same-sized rotation error six times lower than position.
+                reference_magnitude = magnitude(worst_item)
+                if reference_magnitude is not None:
+                    relative = worst / reference_magnitude
+                    severity = relative / RELATIVE_ERROR_LIMIT
+                    observed["reference_magnitude"] = reference_magnitude
+                    observed["relative_error"] = relative
+                    observed["severity_basis"] = "relative"
+                else:
+                    severity = worst / limit
+                    observed["severity_basis"] = "absolute"
+                findings.append(
+                    {
+                        "level": "high",
+                        "focus": focus,
+                        "reason": reason,
+                        "geometry": body_geometry,
+                        "recommended_categories": ["displacement", "shader_structure"],
+                        "severity": severity,
+                        "observed": observed,
+                    }
                 )
-                if worst > limit:
-                    findings.append(
-                        {
-                            "level": "high",
-                            "focus": focus,
-                            "reason": reason,
-                            "geometry": body_geometry,
-                            "recommended_categories": ["displacement", "shader_structure"],
-                            "severity": worst / limit,
-                            "observed": {key: worst, "limit": limit},
-                        }
-                    )
     return findings
+
+
+def _reference_rotation_magnitude(phase: dict[str, Any]) -> float | None:
+    """How much the reference body rotates, when that is large enough to divide by."""
+    reference = phase.get("reference") if isinstance(phase.get("reference"), dict) else {}
+    rotation = _nested_number(reference, "rotation_field", "mean_degrees")
+    if rotation is None or abs(rotation) < RELATIVE_ROTATION_FLOOR_DEGREES:
+        return None
+    return abs(rotation)
+
+
+def _reference_scale_magnitude(phase: dict[str, Any]) -> float | None:
+    """The reference's departure from unit scale, which is what a ratio error is against."""
+    reference = phase.get("reference") if isinstance(phase.get("reference"), dict) else {}
+    scale = _nested_number(reference, "radial_scale_field", "mean_ratio")
+    if scale is None or abs(scale - 1.0) < RELATIVE_SCALE_FLOOR_RATIO:
+        return None
+    return abs(scale - 1.0)
+
+
+def _reference_translation_magnitude(phase: dict[str, Any]) -> float | None:
+    reference = phase.get("reference") if isinstance(phase.get("reference"), dict) else {}
+    magnitude = _nested_number(reference, "translation_field", "magnitude_pixels")
+    if magnitude is None or magnitude < RELATIVE_TRANSLATION_FLOOR_PIXELS:
+        return None
+    return magnitude
 
 
 def _ranked_findings(state: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1538,6 +1617,69 @@ def _ranked_findings(state: dict[str, Any]) -> list[dict[str, Any]]:
                 "observed": finding.get("observed"),
             }
     return sorted(strongest.values(), key=lambda finding: -float(finding["severity"]))
+
+
+def _reference_curves(state: dict[str, Any]) -> dict[str, Any]:
+    """Per-frame reference targets alongside the candidate's own measurements.
+
+    These are absolute, physically meaningful quantities - visible body scale from
+    coverage, body centre, and total turn - so a hypothesis can fit the reference's
+    actual curve rather than guess a direction and wait for the next score.
+    """
+    scored = [
+        item
+        for item in state.get("history", [])
+        if isinstance(item, dict)
+        and item.get("hypothesis_category") != "baseline"
+        and isinstance(item.get("metrics"), dict)
+    ]
+    if not scored:
+        return {"status": "unavailable", "reason": "no evaluated iteration yet"}
+    metrics = max(scored, key=lambda item: int(item.get("iteration", -1)))["metrics"]
+    centroid = metrics.get("salient_centroid_tracking")
+    rotation = metrics.get("salient_rotation_tracking")
+    rows: dict[int, dict[str, Any]] = {}
+    if isinstance(centroid, dict):
+        for sample in centroid.get("samples") or []:
+            if not isinstance(sample, dict) or sample.get("status") != "evaluated":
+                continue
+            frame = sample.get("frame_index")
+            if not isinstance(frame, int):
+                continue
+            row = rows.setdefault(frame, {"frame_index": frame})
+            for side in ("reference", "candidate"):
+                body = sample.get(side) or {}
+                coverage = body.get("coverage")
+                if isinstance(coverage, (int, float)) and coverage > 0:
+                    # A uniformly scaled full-frame body covers scale^2 of the view.
+                    row[f"{side}_scale"] = float(coverage) ** 0.5
+                for key, target in (("centroid_x", "centre_x"), ("centroid_y", "centre_y")):
+                    value = body.get(key)
+                    if isinstance(value, (int, float)):
+                        row[f"{side}_{target}"] = float(value)
+    if isinstance(rotation, dict):
+        for sample in rotation.get("samples") or []:
+            if not isinstance(sample, dict):
+                continue
+            frame = sample.get("frame_index")
+            if not isinstance(frame, int):
+                continue
+            row = rows.setdefault(frame, {"frame_index": frame})
+            for side in ("reference", "candidate"):
+                angle = (sample.get(side) or {}).get("unwrapped_degrees")
+                if isinstance(angle, (int, float)):
+                    row[f"{side}_rotation_degrees"] = float(angle)
+    if not rows:
+        return {"status": "unavailable", "reason": "no per-frame reference measurements available"}
+    return {
+        "status": "available",
+        "note": (
+            "reference_* columns are the measured target; candidate_* are this candidate's "
+            "current values. scale is sqrt(visible coverage) and is only a single-body proxy "
+            "while one body is visible. rotation is total turn, not a per-frame rate."
+        ),
+        "frames": [rows[frame] for frame in sorted(rows)],
+    }
 
 
 def _pivot_is_conditioned(transform: dict[str, Any]) -> bool:
@@ -1817,6 +1959,7 @@ Refine {packet['effect_id']} for iteration {packet['iteration']}.
 
 {_refinement_priority_instruction(packet.get('refinement_priority'))}
 {_findings_instruction(packet.get('refinement_findings'))}
+{_reference_curve_instruction(packet.get('reference_curves'))}
 {_escalation_instruction(packet.get('escalation'))}
 Choose exactly one hypothesis category from: {allowed}.
 Do not repeat a rejected category unless you provide new visual evidence.
@@ -1844,6 +1987,47 @@ def _findings_instruction(findings: Any) -> str:
         "across pixels, degrees and ratios, so the top entry is a suggestion rather than a verdict. If a "
         "lower-ranked signal is a larger error relative to the reference's own magnitude, address that instead "
         "and say why.\n"
+    )
+
+
+def _reference_curve_instruction(curves: Any) -> str:
+    """Point the iteration at the measured target curve, so it can fit rather than guess."""
+    if not isinstance(curves, dict) or curves.get("status") != "available":
+        return ""
+    frames = curves.get("frames")
+    if not isinstance(frames, list) or not frames:
+        return ""
+    columns = [
+        ("reference_scale", "candidate_scale", "scale"),
+        ("reference_centre_x", "candidate_centre_x", "centre_x"),
+        ("reference_rotation_degrees", "candidate_rotation_degrees", "turn_deg"),
+    ]
+    header = "frame | " + " | ".join(
+        f"{label:>18}" for _, _, label in columns
+    )
+    lines = [header, "-" * len(header)]
+    for row in frames:
+        cells = []
+        for reference_key, candidate_key, _ in columns:
+            reference_value = row.get(reference_key)
+            candidate_value = row.get(candidate_key)
+            if isinstance(reference_value, (int, float)) and isinstance(candidate_value, (int, float)):
+                cells.append(f"{reference_value:8.3f}/{candidate_value:<9.3f}")
+            elif isinstance(reference_value, (int, float)):
+                cells.append(f"{reference_value:8.3f}/{'-':<9}")
+            else:
+                cells.append(f"{'-':>8}/{'-':<9}")
+        lines.append(f"{row.get('frame_index'):>5} | " + " | ".join(cells))
+    table = "\n".join(lines)
+    return (
+        "\nMeasured reference targets, shown as reference/candidate per frame:\n"
+        f"{table}\n"
+        f"{curves.get('note', '')}\n"
+        "Fit the shader's curve to these measurements - solve for the magnitude and easing shape that "
+        "reproduces the reference column - rather than scaling an existing constant by a percentage and "
+        "waiting for the next score. If a column shows the candidate easing the wrong way (the reference "
+        "accelerating while the candidate decelerates, or vice versa), the exponent is wrong, not just the "
+        "magnitude.\n"
     )
 
 

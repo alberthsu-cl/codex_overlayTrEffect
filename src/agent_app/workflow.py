@@ -801,6 +801,18 @@ def score_candidate(
                 frame_end=score["transition_window"]["frame_end"],
                 ffmpeg_path=ffmpeg_path,
             )
+        rotation_scorer = modules.get("score_salient_rotation_tracking")
+        if rotation_scorer is not None and source_directories:
+            score["salient_rotation_tracking"] = rotation_scorer(
+                candidate=candidate,
+                reference=reference,
+                source_directories=list(source_directories),
+                width=width,
+                height=height,
+                frame_start=score["transition_window"]["frame_start"],
+                frame_end=score["transition_window"]["frame_end"],
+                ffmpeg_path=ffmpeg_path,
+            )
         motion_scorer = modules.get("score_motion")
         if motion_scorer is not None:
             motion_metrics = motion_scorer(
