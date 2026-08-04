@@ -371,8 +371,24 @@ def build_next_iteration_packet(
         phase_max_iterations = int(phase["max_iterations"])
         phase_max_rejected = int(phase["max_rejected"])
         if attempted_count >= phase_max_iterations:
+            _close_phase_for_budget(
+                candidate_manifest_file,
+                state,
+                phase,
+                attempted_count,
+                rejected_count,
+                "iteration_budget_exhausted",
+            )
             raise ValueError(f"phase iteration budget exhausted: {attempted_count} reaches {phase_max_iterations}")
         if rejected_count >= phase_max_rejected:
+            _close_phase_for_budget(
+                candidate_manifest_file,
+                state,
+                phase,
+                attempted_count,
+                rejected_count,
+                "rejected_iteration_budget_exhausted",
+            )
             raise ValueError(f"phase rejected-iteration budget exhausted: {rejected_count} reaches {phase_max_rejected}")
         blocked_categories = _blocked_categories(state, first_iteration)
         tradeoff_streak = _consecutive_tradeoffs(state, first_iteration)
@@ -1381,6 +1397,30 @@ def _refresh_rejected_budget(state: dict[str, Any]) -> None:
     ]
     budgets["attempted_so_far"] = len(phase_history)
     budgets["rejected_so_far"] = sum(1 for item in phase_history if item.get("status") == "rejected")
+
+
+def _close_phase_for_budget(
+    candidate_manifest_file: Path,
+    state: dict[str, Any],
+    phase: dict[str, Any],
+    attempted_count: int,
+    rejected_count: int,
+    reason: str,
+) -> None:
+    phase["status"] = "closed"
+    phase["closed_at"] = _timestamp()
+    phase["closed_reason"] = reason
+    state["active_phase"] = None
+    state["budgets"] = {
+        "phase": phase["name"],
+        "max_iterations": int(phase["max_iterations"]),
+        "max_rejected": int(phase["max_rejected"]),
+        "attempted_so_far": attempted_count,
+        "rejected_so_far": rejected_count,
+        "status": "closed",
+        "closed_reason": reason,
+    }
+    _write_state(candidate_manifest_file, state)
 
 
 def _import_legacy_history(candidate_dir: Path, state: dict[str, Any]) -> bool:

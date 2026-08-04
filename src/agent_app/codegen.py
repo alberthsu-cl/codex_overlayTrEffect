@@ -9,7 +9,6 @@ from .artifacts import validate_effect_design
 from .io import load_json, write_json
 
 
-_DISSOLVE_ID = re.compile(r"^ModelGenerated\\Dissolve_(\d{2})$")
 _MODEL_ID = re.compile(r"^ModelGenerated\\([A-Za-z][A-Za-z0-9]*)_(\d{2})$")
 _TEMPLATE_FILES = (
     "TrGeneratedDissolve.h",
@@ -43,14 +42,13 @@ def generate_effect(
         raise ValueError("code generation requires an implement_new_effect or tune_existing_effect decision")
 
     effect_id = design["target_effect"].get("effect_id")
-    match = _DISSOLVE_ID.fullmatch(effect_id or "")
+    match = _MODEL_ID.fullmatch(effect_id or "")
     if not match:
         raise ValueError(
-            "the first generator supports effect IDs matching "
-            "ModelGenerated\\Dissolve_XX"
+            "generator supports effect IDs matching ModelGenerated\\Family_XX"
         )
 
-    symbol = f"ModelGeneratedDissolve{match.group(1)}"
+    symbol = f"ModelGenerated{match.group(1)}{match.group(2)}"
     class_name = f"CTr{symbol}"
     shader_symbol = f"g_Tr_{symbol}_PS"
     output_dir.mkdir(parents=True, exist_ok=True)

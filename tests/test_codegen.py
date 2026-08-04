@@ -54,6 +54,22 @@ class CodegenTests(unittest.TestCase):
             self.assertEqual(manifest["class_name"], "CTrModelGeneratedDissolve02")
             self.assertTrue((output_dir / "TrModelGeneratedDissolve02.h").exists())
             self.assertIn("g_Tr_ModelGeneratedDissolve02_PS", (output_dir / "TrModelGeneratedDissolve02.cpp").read_text())
+
+            design["target_effect"] = {
+                "family": "ZoomBlur",
+                "effect_id": "ModelGenerated\\ZoomBlur_01",
+            }
+            design_file.write_text(json.dumps(design), encoding="utf-8")
+            zoom_output_dir = root / "zoom_generated"
+            zoom_manifest = generate_effect(
+                design_file,
+                zoom_output_dir,
+                template_root,
+                root / "zoom_manifest.json",
+            )
+
+            self.assertEqual(zoom_manifest["class_name"], "CTrModelGeneratedZoomBlur01")
+            self.assertTrue((zoom_output_dir / "TrModelGeneratedZoomBlur01.h").exists())
         finally:
             for path in sorted(root.rglob("*"), reverse=True):
                 if path.is_file():
