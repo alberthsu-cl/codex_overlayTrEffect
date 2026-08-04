@@ -1666,9 +1666,15 @@ def _reference_curves(state: dict[str, Any]) -> dict[str, Any]:
                 continue
             row = rows.setdefault(frame, {"frame_index": frame})
             for side in ("reference", "candidate"):
-                angle = (sample.get(side) or {}).get("unwrapped_degrees")
+                fit = sample.get(side) or {}
+                angle = fit.get("unwrapped_degrees")
                 if isinstance(angle, (int, float)):
                     row[f"{side}_rotation_degrees"] = float(angle)
+                # Measured body scale, which unlike sqrt(coverage) is not
+                # confounded by frame-edge clipping of a rotated body.
+                measured_scale = fit.get("scale")
+                if isinstance(measured_scale, (int, float)):
+                    row[f"{side}_measured_scale"] = float(measured_scale)
     if not rows:
         return {"status": "unavailable", "reason": "no per-frame reference measurements available"}
     return {
