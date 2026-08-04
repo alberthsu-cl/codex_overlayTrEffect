@@ -58,6 +58,25 @@ LOWER_IS_BETTER_METRICS = {
     "salient_centroid_max_distance_error",
     "salient_coverage_error",
 }
+TRANSLATION_DELTA_LIMIT_PIXELS = 2.0
+PIVOT_DELTA_LIMIT_PIXELS = 8.0
+ROTATION_DELTA_LIMIT_DEGREES = 10.0
+SCALE_DELTA_LIMIT_RATIO = 0.15
+# A similarity transform's pivot is the fixed point of (I - scale*R), so the
+# solve degenerates as the transform approaches identity: a body that barely
+# rotates reports a pivot hundreds of pixels away from anything meaningful.
+# Require a measurable departure from identity before pivot error is allowed to
+# drive prioritisation.
+PIVOT_CONDITIONING_MIN_ROTATION_DEGREES = 1.0
+PIVOT_CONDITIONING_MIN_SCALE_DELTA = 0.01
+# A signed-direction disagreement has no magnitude to scale, but it is a
+# qualitative error, so it outranks a merely-over-threshold magnitude.
+DIRECTION_DISAGREEMENT_SEVERITY = 3.0
+# Consecutive tradeoffs mean every hypothesis is moving some metric while
+# regressing another - the signature of tuning inside measurement noise.  After
+# this many in a row, the next request demands a structural re-derivation
+# instead of another constant nudge.
+CONSECUTIVE_TRADEOFF_ESCALATION_LIMIT = 3
 METRIC_IMPROVEMENT_THRESHOLDS = {
     "motion_similarity": MOTION_SIMILARITY_IMPROVEMENT,
     "foreground_body_rotation_direction_agreement": 0.05,
@@ -345,12 +364,14 @@ def build_next_iteration_packet(
         if rejected_count >= phase_max_rejected:
             raise ValueError(f"phase rejected-iteration budget exhausted: {rejected_count} reaches {phase_max_rejected}")
         blocked_categories = _blocked_categories(state, first_iteration)
+        tradeoff_streak = _consecutive_tradeoffs(state, first_iteration)
         budget = {
             "phase": phase["name"],
             "max_iterations": phase_max_iterations,
             "max_rejected": phase_max_rejected,
             "attempted_so_far": attempted_count,
             "rejected_so_far": rejected_count,
+            "consecutive_tradeoffs": tradeoff_streak,
         }
     else:
         if next_iteration > max_iterations:
@@ -363,10 +384,12 @@ def build_next_iteration_packet(
                 f"rejected-iteration budget exhausted: {rejected_count} reaches {max_rejected}"
             )
         blocked_categories = _blocked_categories(state)
+        tradeoff_streak = _consecutive_tradeoffs(state)
         budget = {
             "max_iterations": max_iterations,
             "max_rejected": max_rejected,
             "rejected_so_far": rejected_count,
+            "consecutive_tradeoffs": tradeoff_streak,
         }
     latest_report = _latest_report(candidate_dir / "evaluations")
     latest_video = _latest_video(candidate_dir / "evaluations")
@@ -375,6 +398,7 @@ def build_next_iteration_packet(
     reference_diagnostics, reference_diagnostic_video = _reference_diagnostics(analysis_file)
     reference_edge_diagnostics = _reference_edge_diagnostics(analysis_file)
     refinement_priority = _motion_refinement_priority(state)
+    refinement_findings = _ranked_findings(state)
     packet_file = candidate_dir / "packets" / f"iteration_{next_iteration:03d}_packet.json"
     prompt_file = candidate_dir / "packets" / f"iteration_{next_iteration:03d}_agent_request.md"
     candidate = load_json(candidate_manifest_file)
@@ -417,6 +441,10 @@ def build_next_iteration_packet(
         "reference_diagnostics_video": str(reference_diagnostic_video) if reference_diagnostic_video else None,
         "reference_edge_diagnostics_file": str(reference_edge_diagnostics) if reference_edge_diagnostics else None,
         "refinement_priority": refinement_priority,
+        # Every over-threshold signal, not only the winner: a lower-ranked entry
+        # can still be the real defect when thresholds across different units are
+        # not equally calibrated.
+        "refinement_findings": refinement_findings,
         "prompt_files": _select_prompt_files(
             analysis_file,
             include_edge_diagnostics=bool(reference_edge_diagnostics),
@@ -430,6 +458,11 @@ def build_next_iteration_packet(
         ],
         "blocked_hypothesis_categories": blocked_categories,
         "budgets": state["budgets"],
+        "escalation": {
+            "consecutive_tradeoffs": tradeoff_streak,
+            "limit": CONSECUTIVE_TRADEOFF_ESCALATION_LIMIT,
+            "structural_review_required": tradeoff_streak >= CONSECUTIVE_TRADEOFF_ESCALATION_LIMIT,
+        },
         "evaluation_after_edit": evaluate_after_edit,
         "evaluation_command": evaluation_command,
         "continuation_command": continuation_command,
@@ -1386,6 +1419,160 @@ def _phase_by_name(state: dict[str, Any], name: str) -> dict[str, Any] | None:
     return None
 
 
+def _magnitude_findings(metrics: dict[str, Any]) -> list[dict[str, Any]]:
+    """Collect every over-threshold geometry disagreement with a comparable severity.
+
+    Severity is the value divided by that signal's own threshold, so errors
+    measured in pixels, degrees and ratios can be ranked against each other.
+    """
+    findings: list[dict[str, Any]] = []
+
+    geometry = metrics.get("motion_geometry")
+    if isinstance(geometry, dict) and geometry.get("status") == "geometry_mismatch":
+        candidate = geometry.get("candidate") if isinstance(geometry.get("candidate"), dict) else {}
+        reference = geometry.get("reference") if isinstance(geometry.get("reference"), dict) else {}
+        confidence = min(
+            float(candidate.get("confidence", 0.0)),
+            float(reference.get("confidence", 0.0)),
+        )
+        if confidence >= 0.5:
+            position = {
+                "level": "high",
+                "focus": "transform_position",
+                "reason": "reliable geometry shows incorrect transform position or translation direction",
+                "geometry": geometry,
+                "recommended_categories": ["displacement", "shader_structure"],
+            }
+            translation_delta = geometry.get("translation_delta_pixels")
+            if isinstance(translation_delta, (int, float)) and translation_delta > TRANSLATION_DELTA_LIMIT_PIXELS:
+                findings.append(
+                    {**position, "severity": translation_delta / TRANSLATION_DELTA_LIMIT_PIXELS}
+                )
+            if geometry.get("translation_direction_agreement") is False:
+                findings.append({**position, "severity": DIRECTION_DISAGREEMENT_SEVERITY})
+            pivot_delta = geometry.get("pivot_delta_pixels")
+            if (
+                isinstance(pivot_delta, (int, float))
+                and pivot_delta > PIVOT_DELTA_LIMIT_PIXELS
+                and _pivot_is_conditioned(candidate)
+                and _pivot_is_conditioned(reference)
+            ):
+                findings.append({**position, "severity": pivot_delta / PIVOT_DELTA_LIMIT_PIXELS})
+            if not findings:
+                findings.append(
+                    {
+                        "level": "high",
+                        "focus": "motion_geometry",
+                        "reason": "reliable reference and candidate geometry estimates disagree",
+                        "geometry": geometry,
+                        "recommended_categories": ["displacement", "regions", "shader_structure"],
+                        "severity": 1.0,
+                    }
+                )
+
+    body_geometry = metrics.get("foreground_body_transform")
+    if isinstance(body_geometry, dict) and body_geometry.get("status") == "estimated":
+        confidence = body_geometry.get("confidence", 0.0)
+        if isinstance(confidence, (int, float)) and confidence >= 0.5:
+            phase_values = body_geometry.get("phases") if isinstance(body_geometry.get("phases"), dict) else {}
+            phase_items = [item for item in phase_values.values() if isinstance(item, dict)]
+            for key, limit, focus, reason in (
+                (
+                    "rotation_delta_degrees",
+                    ROTATION_DELTA_LIMIT_DEGREES,
+                    "transform_rotation",
+                    "feature-tracked body rotation disagrees with the reference",
+                ),
+                (
+                    "scale_delta_ratio",
+                    SCALE_DELTA_LIMIT_RATIO,
+                    "transform_scale",
+                    "feature-tracked body scale disagrees with the reference",
+                ),
+                (
+                    "translation_delta_pixels",
+                    TRANSLATION_DELTA_LIMIT_PIXELS,
+                    "foreground_body_transform",
+                    "feature-tracked body position disagrees with the reference",
+                ),
+            ):
+                worst = max(
+                    [abs(float(item.get(key, 0.0))) for item in phase_items] or [0.0]
+                )
+                if worst > limit:
+                    findings.append(
+                        {
+                            "level": "high",
+                            "focus": focus,
+                            "reason": reason,
+                            "geometry": body_geometry,
+                            "recommended_categories": ["displacement", "shader_structure"],
+                            "severity": worst / limit,
+                            "observed": {key: worst, "limit": limit},
+                        }
+                    )
+    return findings
+
+
+def _ranked_findings(state: dict[str, Any]) -> list[dict[str, Any]]:
+    """Summarise every over-threshold geometry signal, most severe first."""
+    scored = [
+        item
+        for item in state.get("history", [])
+        if isinstance(item, dict)
+        and item.get("hypothesis_category") != "baseline"
+        and isinstance(item.get("metrics"), dict)
+    ]
+    if not scored:
+        return []
+    latest = max(scored, key=lambda item: int(item.get("iteration", -1)))
+    strongest: dict[str, dict[str, Any]] = {}
+    for finding in _magnitude_findings(latest["metrics"]):
+        focus = str(finding["focus"])
+        previous = strongest.get(focus)
+        if previous is None or float(finding["severity"]) > float(previous["severity"]):
+            strongest[focus] = {
+                "focus": focus,
+                "severity": finding["severity"],
+                "reason": finding["reason"],
+                "observed": finding.get("observed"),
+            }
+    return sorted(strongest.values(), key=lambda finding: -float(finding["severity"]))
+
+
+def _pivot_is_conditioned(transform: dict[str, Any]) -> bool:
+    """Report whether a transform is far enough from identity to place a pivot.
+
+    Near identity the pivot solve is ill-conditioned and its output is dominated
+    by noise, so pivot error must not be allowed to outrank real rotation or
+    scale disagreement.
+    """
+    rotation = _nested_number(transform, "rotation_field", "mean_degrees")
+    scale = _nested_number(transform, "radial_scale_field", "mean_ratio")
+    if rotation is not None and abs(rotation) >= PIVOT_CONDITIONING_MIN_ROTATION_DEGREES:
+        return True
+    return scale is not None and abs(scale - 1.0) >= PIVOT_CONDITIONING_MIN_SCALE_DELTA
+
+
+def _consecutive_tradeoffs(state: dict[str, Any], first_iteration: int | None = None) -> int:
+    """Count tradeoffs since the most recent accepted iteration in this phase."""
+    evaluated = [
+        item
+        for item in state.get("history", [])
+        if isinstance(item, dict)
+        and item.get("status") in {"accepted", "rejected", "tradeoff"}
+        and item.get("hypothesis_category") != "baseline"
+        and isinstance(item.get("iteration"), int)
+        and (first_iteration is None or int(item["iteration"]) >= first_iteration)
+    ]
+    streak = 0
+    for item in sorted(evaluated, key=lambda item: int(item["iteration"]), reverse=True):
+        if item["status"] != "tradeoff":
+            break
+        streak += 1
+    return streak
+
+
 def _blocked_categories(state: dict[str, Any], first_iteration: int | None = None) -> list[str]:
     blocked: list[str] = []
     for category in HYPOTHESIS_CATEGORIES:
@@ -1480,7 +1667,6 @@ def _motion_refinement_priority(state: dict[str, Any]) -> dict[str, Any]:
             "topology": topology,
             "recommended_categories": ["shader_structure", "regions"],
         }
-    geometry = latest["metrics"].get("motion_geometry")
     angular_motion = latest["metrics"].get("angular_motion")
     if isinstance(angular_motion, dict) and angular_motion.get("status") == "direction_mismatch":
         confidence = angular_motion.get("confidence")
@@ -1492,67 +1678,14 @@ def _motion_refinement_priority(state: dict[str, Any]) -> dict[str, Any]:
                 "angular_motion": angular_motion,
                 "recommended_categories": ["displacement", "shader_structure"],
             }
-    if isinstance(geometry, dict) and geometry.get("status") == "geometry_mismatch":
-        candidate = geometry.get("candidate") if isinstance(geometry.get("candidate"), dict) else {}
-        reference = geometry.get("reference") if isinstance(geometry.get("reference"), dict) else {}
-        confidence = min(
-            float(candidate.get("confidence", 0.0)),
-            float(reference.get("confidence", 0.0)),
-        )
-        if confidence >= 0.5:
-            translation_delta = geometry.get("translation_delta_pixels")
-            translation_direction = geometry.get("translation_direction_agreement")
-            pivot_delta = geometry.get("pivot_delta_pixels")
-            if (
-                isinstance(translation_delta, (int, float))
-                and translation_delta > 2.0
-            ) or translation_direction is False or (
-                isinstance(pivot_delta, (int, float)) and pivot_delta > 8.0
-            ):
-                return {
-                    "level": "high",
-                    "focus": "transform_position",
-                    "reason": "reliable geometry shows incorrect transform position or translation direction",
-                    "geometry": geometry,
-                    "recommended_categories": ["displacement", "shader_structure"],
-                }
-            return {
-                "level": "high",
-                "focus": "motion_geometry",
-                "reason": "reliable reference and candidate geometry estimates disagree",
-                "geometry": geometry,
-                "recommended_categories": ["displacement", "regions", "shader_structure"],
-            }
-    body_geometry = latest["metrics"].get("foreground_body_transform")
-    if isinstance(body_geometry, dict) and body_geometry.get("status") == "estimated":
-        confidence = body_geometry.get("confidence", 0.0)
-        if isinstance(confidence, (int, float)) and confidence >= 0.5:
-            phase_values = body_geometry.get("phases") if isinstance(body_geometry.get("phases"), dict) else {}
-            phase_items = [item for item in phase_values.values() if isinstance(item, dict)]
-            translation_delta = max(
-                [float(item.get("translation_delta_pixels", 0.0)) for item in phase_items] or [0.0]
-            )
-            rotation_delta = max(
-                [float(item.get("rotation_delta_degrees", 0.0)) for item in phase_items] or [0.0]
-            )
-            scale_delta = max(
-                [float(item.get("scale_delta_ratio", 0.0)) for item in phase_items] or [0.0]
-            )
-            if any(
-                isinstance(value, (int, float)) and value > limit
-                for value, limit in (
-                    (translation_delta, 2.0),
-                    (rotation_delta, 10.0),
-                    (scale_delta, 0.15),
-                )
-            ):
-                return {
-                    "level": "high",
-                    "focus": "foreground_body_transform",
-                    "reason": "feature-tracked body geometry disagrees with the reference",
-                    "geometry": body_geometry,
-                    "recommended_categories": ["displacement", "shader_structure"],
-                }
+    # Magnitude-based signals are ranked by how far past their own threshold they
+    # sit, rather than by the order they are tested.  First-match-wins ordering
+    # previously let motion_geometry's pivot term pre-empt the rotation and scale
+    # tests below it, so a degenerate pivot could hide a large rotation error
+    # indefinitely.
+    findings = _magnitude_findings(latest["metrics"])
+    if findings:
+        return max(findings, key=lambda finding: float(finding["severity"]))
     regional_motion = latest["metrics"].get("regional_motion")
     if isinstance(regional_motion, dict) and regional_motion.get("status") == "direction_mismatch":
         return {
@@ -1683,7 +1816,8 @@ Edit only:
 Refine {packet['effect_id']} for iteration {packet['iteration']}.
 
 {_refinement_priority_instruction(packet.get('refinement_priority'))}
-
+{_findings_instruction(packet.get('refinement_findings'))}
+{_escalation_instruction(packet.get('escalation'))}
 Choose exactly one hypothesis category from: {allowed}.
 Do not repeat a rejected category unless you provide new visual evidence.
 Preserve the FX ID, class names, endpoint behavior, and candidate workspace boundary.
@@ -1691,6 +1825,55 @@ Create or update exactly one iteration_{packet['iteration']:03d}_*.json record w
 `hypothesis_category`, `visual_hypothesis`, `changed_files`, and expected outcome.
 {_evaluation_instruction(packet)}
 """
+
+
+def _findings_instruction(findings: Any) -> str:
+    """List the competing signals so a lower-ranked one can still be chosen."""
+    if not isinstance(findings, list) or len(findings) < 2:
+        return ""
+    lines = "\n".join(
+        f"- {finding.get('focus')}: severity {float(finding.get('severity', 0.0)):.1f}x its threshold"
+        + (f" ({finding.get('observed')})" if finding.get("observed") else "")
+        for finding in findings
+        if isinstance(finding, dict)
+    )
+    return (
+        "\nAll over-threshold geometry signals this iteration, most severe first:\n"
+        f"{lines}\n"
+        "Severity is each value divided by its own threshold, and those thresholds are not equally calibrated "
+        "across pixels, degrees and ratios, so the top entry is a suggestion rather than a verdict. If a "
+        "lower-ranked signal is a larger error relative to the reference's own magnitude, address that instead "
+        "and say why.\n"
+    )
+
+
+def _escalation_instruction(escalation: Any) -> str:
+    """Demand a structural re-derivation once nudging has plainly stalled."""
+    if not isinstance(escalation, dict):
+        return ""
+    streak = escalation.get("consecutive_tradeoffs")
+    if not isinstance(streak, int) or streak <= 0:
+        return ""
+    if not escalation.get("structural_review_required"):
+        return (
+            f"\nThis phase has {streak} consecutive tradeoff outcome(s). Each one improved a metric while "
+            "regressing another, so the current lever may be near its useful limit. Prefer a hypothesis that "
+            "changes the model rather than one that rescales the same constant.\n"
+        )
+    return (
+        f"\nSTRUCTURAL REVIEW REQUIRED: {streak} consecutive tradeoffs, at or past the limit of "
+        f"{escalation.get('limit')}. Do not tune another constant this iteration. Every hypothesis has been "
+        "moving one metric while regressing another, which is the signature of optimising inside measurement "
+        "noise. Instead do one of the following and say which you chose:\n"
+        "- Re-derive a curve from the reference itself (measure the quantity per frame and fit it) rather than "
+        "adjusting a coefficient by a percentage.\n"
+        "- Question the analysis and design artifacts: check whether a `must_preserve` claim or the transition "
+        "summary is contradicted by measurement, and report the contradiction instead of coding against it.\n"
+        "- Replace the model for the failing property (its easing shape, its pivot/translation parameterisation, "
+        "or the number of bodies composited) rather than its magnitude.\n"
+        "- If a selection metric itself looks degenerate or unit-ambiguous, say so and propose the measurement "
+        "that would settle it.\n"
+    )
 
 
 def _select_prompt_files(analysis_file: Path, include_edge_diagnostics: bool) -> list[str]:
@@ -1767,6 +1950,24 @@ def _refinement_priority_instruction(priority: Any) -> str:
             "Current refinement priority: high motion geometry. The candidate and reference transformation estimates "
             f"differ by {rotation_delta} degrees of rotation and {scale_delta} scale ratio. "
             "Inspect rotation, scale, reflection, and spatial-displacement evidence before tuning blur or blend."
+        )
+    if priority.get("focus") == "transform_rotation":
+        observed = priority.get("observed") if isinstance(priority.get("observed"), dict) else {}
+        return (
+            "Current refinement priority: transform rotation. The worst phase disagrees with the reference by "
+            f"{observed.get('rotation_delta_degrees', 'unknown')} degrees against a {observed.get('limit', 'unknown')} "
+            "degree limit. Note that this figure is a PER-FRAME-PAIR rate, not a total turn, so it accumulates over "
+            "the phase: a few degrees per pair is tens or hundreds of degrees of accumulated error. Check the total "
+            "rotation the reference body reaches, not only its rate, and correct the rotation magnitude and its easing "
+            "shape before spending the iteration on position, blur, or blend."
+        )
+    if priority.get("focus") == "transform_scale":
+        observed = priority.get("observed") if isinstance(priority.get("observed"), dict) else {}
+        return (
+            "Current refinement priority: transform scale. The worst phase disagrees with the reference by a "
+            f"{observed.get('scale_delta_ratio', 'unknown')} scale ratio against a {observed.get('limit', 'unknown')} "
+            "limit. Compare the body's visible extent per frame against the reference, including whether it should "
+            "reach zero at all, and correct the scale curve's floor and easing shape before tuning position or timing."
         )
     if priority.get("focus") == "transform_position":
         geometry = priority.get("geometry") if isinstance(priority.get("geometry"), dict) else {}

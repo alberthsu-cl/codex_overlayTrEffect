@@ -31,9 +31,14 @@ from agent_app.workflow import (
 from agent_app.artifacts import build_render_job, validate_effect_design
 from agent_app.cli import main as cli_main
 from agent_app.candidate_controller import (
+    CONSECUTIVE_TRADEOFF_ESCALATION_LIMIT,
+    _consecutive_tradeoffs,
     _endpoints_are_exact,
+    _escalation_instruction,
+    _magnitude_findings,
     _metrics_from_report,
     _motion_refinement_priority,
+    _pivot_is_conditioned,
     _normalize_selection_policy,
     _select_outcome,
     _select_outcome_with_decision,
@@ -57,6 +62,106 @@ from agent_app.codegen import (
 
 
 class WorkflowTests(unittest.TestCase):
+    @staticmethod
+    def _geometry_metrics(*, pivot_delta: float, rotation: float, scale: float) -> dict:
+        """Metrics shaped like a real report, with a tunable pivot and transform."""
+        transform = {
+            "confidence": 0.8,
+            "rotation_field": {"mean_degrees": rotation},
+            "radial_scale_field": {"mean_ratio": scale},
+        }
+        return {
+            "motion_geometry": {
+                "status": "geometry_mismatch",
+                "candidate": transform,
+                "reference": transform,
+                "translation_delta_pixels": 0.5,
+                "translation_direction_agreement": True,
+                "pivot_delta_pixels": pivot_delta,
+            },
+            "foreground_body_transform": {
+                "status": "estimated",
+                "confidence": 0.8,
+                "phases": {
+                    "incoming": {
+                        "rotation_delta_degrees": 40.0,
+                        "scale_delta_ratio": 0.01,
+                        "translation_delta_pixels": 0.5,
+                    }
+                },
+            },
+        }
+
+    def test_degenerate_pivot_does_not_pre_empt_rotation(self) -> None:
+        # A near-identity transform makes the pivot solve ill-conditioned, so its
+        # huge delta must not outrank a real rotation disagreement.  This is the
+        # ordering bug that hid a 4x rotation deficit for dozens of iterations.
+        metrics = self._geometry_metrics(pivot_delta=200.0, rotation=0.05, scale=1.0004)
+        priority = _motion_refinement_priority(
+            {"history": [{"iteration": 1, "hypothesis_category": "displacement", "metrics": metrics}]}
+        )
+        self.assertEqual(priority["focus"], "transform_rotation")
+        foci = {finding["focus"] for finding in _magnitude_findings(metrics)}
+        self.assertNotIn("transform_position", foci)
+
+    def test_conditioned_pivot_still_reports_position(self) -> None:
+        # Once the body genuinely rotates, the pivot is meaningful again and a
+        # large pivot delta should outrank a smaller rotation error.
+        metrics = self._geometry_metrics(pivot_delta=200.0, rotation=12.0, scale=1.05)
+        metrics["foreground_body_transform"]["phases"]["incoming"]["rotation_delta_degrees"] = 11.0
+        priority = _motion_refinement_priority(
+            {"history": [{"iteration": 1, "hypothesis_category": "displacement", "metrics": metrics}]}
+        )
+        self.assertEqual(priority["focus"], "transform_position")
+
+    def test_pivot_conditioning_requires_departure_from_identity(self) -> None:
+        self.assertFalse(
+            _pivot_is_conditioned(
+                {"rotation_field": {"mean_degrees": 0.1}, "radial_scale_field": {"mean_ratio": 1.001}}
+            )
+        )
+        self.assertTrue(
+            _pivot_is_conditioned(
+                {"rotation_field": {"mean_degrees": 5.0}, "radial_scale_field": {"mean_ratio": 1.0}}
+            )
+        )
+        self.assertTrue(
+            _pivot_is_conditioned(
+                {"rotation_field": {"mean_degrees": 0.0}, "radial_scale_field": {"mean_ratio": 1.2}}
+            )
+        )
+
+    def test_consecutive_tradeoffs_counts_only_the_current_streak(self) -> None:
+        history = [
+            {"iteration": 1, "status": "tradeoff", "hypothesis_category": "displacement"},
+            {"iteration": 2, "status": "accepted", "hypothesis_category": "displacement"},
+            {"iteration": 3, "status": "tradeoff", "hypothesis_category": "displacement"},
+            {"iteration": 4, "status": "tradeoff", "hypothesis_category": "displacement"},
+        ]
+        self.assertEqual(_consecutive_tradeoffs({"history": history}), 2)
+        # An accepted iteration resets the streak.
+        history.append({"iteration": 5, "status": "accepted", "hypothesis_category": "displacement"})
+        self.assertEqual(_consecutive_tradeoffs({"history": history}), 0)
+        # Phase scoping ignores iterations before the phase started.
+        self.assertEqual(_consecutive_tradeoffs({"history": history}, first_iteration=3), 0)
+
+    def test_escalation_demands_structural_review_past_the_limit(self) -> None:
+        below = _escalation_instruction(
+            {"consecutive_tradeoffs": 1, "limit": CONSECUTIVE_TRADEOFF_ESCALATION_LIMIT,
+             "structural_review_required": False}
+        )
+        self.assertIn("consecutive tradeoff", below)
+        self.assertNotIn("STRUCTURAL REVIEW REQUIRED", below)
+
+        at_limit = _escalation_instruction(
+            {"consecutive_tradeoffs": CONSECUTIVE_TRADEOFF_ESCALATION_LIMIT,
+             "limit": CONSECUTIVE_TRADEOFF_ESCALATION_LIMIT,
+             "structural_review_required": True}
+        )
+        self.assertIn("STRUCTURAL REVIEW REQUIRED", at_limit)
+        self.assertIn("Do not tune another constant", at_limit)
+        self.assertEqual(_escalation_instruction({"consecutive_tradeoffs": 0}), "")
+
     def test_transform_report_exposes_phase_selection_metrics(self) -> None:
         endpoints = {
             "before_transition": {"mse": 0.0, "ssim": 1.0},
