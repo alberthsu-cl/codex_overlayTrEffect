@@ -43,7 +43,7 @@
 
   <rect class="command" x="280" y="185" width="205" height="105"/>
   <text class="text" x="382" y="225" text-anchor="middle">Motion diagnostics</text>
-  <text class="small" x="382" y="255" text-anchor="middle">dense flow + regions</text>
+  <text class="small" x="382" y="255" text-anchor="middle">dense flow/rigid-body fit</text>
 
   <rect class="codex" x="505" y="185" width="205" height="105"/>
   <text class="text" x="607" y="225" text-anchor="middle">Agent video</text>
