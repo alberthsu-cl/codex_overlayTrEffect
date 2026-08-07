@@ -9,8 +9,8 @@ Run at most six additional evaluated iterations. Do not create another FX ID.
 1. Inspect the current controller state first:
 
    ```powershell
-   conda run -n harness python agent/src/main.py candidate-status `
-     --manifest "<candidate-root>/candidate_manifest.json"
+   conda run -n harness python agent\src\main.py candidate-status `
+     --manifest "<candidate-root>\candidate_manifest.json"
    ```
 
    If an active phase has remaining budget, continue that phase. Do **not** run
@@ -22,11 +22,11 @@ Run at most six additional evaluated iterations. Do not create another FX ID.
    command once with a new, unused phase name:
 
    ```powershell
-   conda run -n harness python agent/src/main.py candidate-resume `
-     --manifest "<candidate-root>/candidate_manifest.json" `
-     --analysis "<sample-root>/analysis/transition_structure.json" `
-     --design "<sample-root>/design/effect_design.json" `
-     --phase shader_refinement_next `
+   conda run -n harness python agent\src\main.py candidate-resume `
+     --manifest "<candidate-root>\candidate_manifest.json" `
+     --analysis "<sample-root>\analysis\transition_structure.json" `
+     --design "<sample-root>\design\effect_design.json" `
+     --phase shader_refinement_01`
      --max-iterations 6 `
      --max-rejected 3
    ```
