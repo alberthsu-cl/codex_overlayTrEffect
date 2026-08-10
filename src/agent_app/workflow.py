@@ -847,6 +847,20 @@ def score_candidate(
             )
             if topology is not None:
                 score["motion_topology"] = topology
+            blur_direction_scorer = modules.get("score_motion_blur_direction")
+            if blur_direction_scorer is not None:
+                blur_direction = _score_motion_blur_direction(
+                    candidate=candidate,
+                    width=width,
+                    height=height,
+                    frame_start=score["transition_window"]["frame_start"],
+                    frame_end=score["transition_window"]["frame_end"],
+                    scorer=blur_direction_scorer,
+                    analysis_file=analysis_file,
+                    design_file=design_file,
+                )
+                if blur_direction is not None:
+                    score["motion_blur_direction"] = blur_direction
             score["transition_diagnostics"]["worst_motion_pairs"] = sorted(
                 motion_metrics["pairs"],
                 key=lambda pair: float(pair.get("vector_mae", pair.get("mean_shift_error", 0.0))),
@@ -1045,6 +1059,87 @@ def _normalize_motion_topology_policy(
     }
     if inferred_axes:
         result["inferred_motion_axes"] = inferred_axes
+    return result
+
+
+def _resolve_motion_blur_direction_policy(
+    analysis_file: Path | None,
+    design_file: Path | None,
+) -> dict[str, Any]:
+    """Resolve whether a motion-blur-direction self-consistency check applies to
+    this candidate. Opt-in only: unlike motion_topology (which can be inferred
+    from region/split keywords in the analysis artifact), there is no safe
+    default motion_model/pivot to guess for an arbitrary effect, so this stays
+    disabled unless a design or analysis artifact declares it explicitly."""
+    for source_name, artifact_file in (("effect_design", design_file), ("transition_analysis", analysis_file)):
+        if artifact_file is None or not artifact_file.exists():
+            continue
+        try:
+            artifact = load_json(artifact_file)
+        except (OSError, ValueError):
+            continue
+        policy = artifact.get("evaluation_policy")
+        if not isinstance(policy, dict):
+            continue
+        declared = policy.get("motion_blur_direction")
+        if isinstance(declared, dict):
+            normalized = _normalize_motion_blur_direction_policy(declared, source_name)
+            if normalized is not None:
+                return normalized
+    return {"mode": "disabled", "source": "no_artifact_policy"}
+
+
+def _normalize_motion_blur_direction_policy(policy: dict[str, Any], source: str) -> dict[str, Any] | None:
+    mode = policy.get("mode")
+    if mode not in {"disabled", "enabled"}:
+        return None
+    if mode == "disabled":
+        return {"mode": "disabled", "source": source}
+    motion_model = policy.get("motion_model")
+    if motion_model not in {"rotation", "zoom"}:
+        return None
+    pivot = policy.get("pivot", [0.5, 0.5])
+    if (
+        not isinstance(pivot, list)
+        or len(pivot) != 2
+        or not all(isinstance(value, (int, float)) for value in pivot)
+    ):
+        return None
+    return {
+        "mode": "enabled",
+        "motion_model": motion_model,
+        "pivot": [float(pivot[0]), float(pivot[1])],
+        "source": source,
+    }
+
+
+def _score_motion_blur_direction(
+    candidate: Path,
+    width: int,
+    height: int,
+    frame_start: int,
+    frame_end: int,
+    scorer: Any,
+    analysis_file: Path | None = None,
+    design_file: Path | None = None,
+) -> dict[str, Any] | None:
+    policy = _resolve_motion_blur_direction_policy(analysis_file, design_file)
+    if policy["mode"] == "disabled":
+        return {
+            "status": "not_applicable",
+            "reason": "motion blur direction check is disabled for this transition structure",
+            "policy": policy,
+        }
+    result = scorer(
+        candidate=candidate,
+        width=width,
+        height=height,
+        frame_start=frame_start,
+        frame_end=frame_end,
+        motion_model=policy["motion_model"],
+        pivot=tuple(policy["pivot"]),
+    )
+    result["policy"] = policy
     return result
 
 

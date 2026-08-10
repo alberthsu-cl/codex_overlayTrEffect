@@ -47,6 +47,7 @@ SELECTION_METRICS = (
     "salient_coverage_error",
     "salient_rotation_error",
     "salient_rotation_max_error",
+    "motion_blur_direction_agreement",
 )
 LOWER_IS_BETTER_METRICS = {
     "mse",
@@ -97,6 +98,24 @@ METRIC_REGRESSION_TOLERANCES = {
     "motion_similarity": MOTION_SIMILARITY_REGRESSION_TOLERANCE,
     "foreground_body_rotation_direction_agreement": 0.05,
     "geometry_similarity": 0.03,
+}
+# foreground_body_translation_error/pivot_error/scale_error can all have a
+# baseline value that is already tiny (ORB similarity-transform fits on a
+# near-static or barely-scaled body routinely land under 0.2px / 0.005 ratio).
+# A purely relative tolerance (MSE_REGRESSION_TOLERANCE) breaks down there: a
+# 0.0003 scale-ratio wobble - well within the detector's own measurement noise
+# - reads as a 10%+ "regression" and trips the guardrail on noise alone,
+# blocking otherwise-clean iterations regardless of hypothesis (confirmed
+# twice on classic_spin_01/SpinBlur_01: first on translation_error, then again
+# on scale_error once that was fixed). Require the absolute delta to also
+# clear a floor before a relative regression counts. RELATIVE_TRANSLATION_FLOOR_PIXELS
+# and RELATIVE_SCALE_FLOOR_RATIO are reused here since they already define
+# this codebase's noise floors for a closely related purpose (severity
+# relative-scaling below).
+METRIC_REGRESSION_ABSOLUTE_FLOORS = {
+    "foreground_body_translation_error": RELATIVE_TRANSLATION_FLOOR_PIXELS,
+    "foreground_body_pivot_error": RELATIVE_TRANSLATION_FLOOR_PIXELS,
+    "foreground_body_scale_error": RELATIVE_SCALE_FLOOR_RATIO,
 }
 
 
@@ -972,6 +991,13 @@ def _metrics_from_report(report: dict[str, Any]) -> dict[str, Any]:
     edge_content_policy = score.get("edge_content_policy")
     if isinstance(edge_content_policy, dict):
         metrics["edge_content_policy"] = edge_content_policy
+    blur_direction = score.get("motion_blur_direction")
+    if isinstance(blur_direction, dict):
+        metrics["motion_blur_direction"] = blur_direction
+        if blur_direction.get("status") == "estimated" and isinstance(
+            blur_direction.get("direction_agreement"), (int, float)
+        ):
+            metrics["motion_blur_direction_agreement"] = float(blur_direction["direction_agreement"])
     phase_scores = score.get("phase_scores")
     if isinstance(phase_scores, dict):
         metrics["phase_scores"] = phase_scores
@@ -1185,11 +1211,16 @@ def _selection_deltas(metrics: dict[str, Any], previous: dict[str, Any]) -> dict
             continue
         if metric in LOWER_IS_BETTER_METRICS:
             relative = (float(current) - float(baseline)) / max(abs(float(baseline)), 1e-9)
+            absolute_delta = float(current) - float(baseline)
+            absolute_floor = METRIC_REGRESSION_ABSOLUTE_FLOORS.get(metric)
+            regressed_beyond_guardrail = relative > MSE_REGRESSION_TOLERANCE
+            if absolute_floor is not None:
+                regressed_beyond_guardrail = regressed_beyond_guardrail and absolute_delta > absolute_floor
             deltas[metric] = {
                 "baseline": float(baseline), "current": float(current), "relative_change": relative,
                 "improved": relative < 0.0,
                 "materially_improved": relative <= -MSE_IMPROVEMENT_RATIO,
-                "regressed_beyond_guardrail": relative > MSE_REGRESSION_TOLERANCE,
+                "regressed_beyond_guardrail": regressed_beyond_guardrail,
             }
         else:
             delta = float(current) - float(baseline)

@@ -20,6 +20,7 @@ def load_harness_modules(workspace_root: Path):
         create_motion_visualizations,
         score_frame_sequences,
         score_motion,
+        score_motion_blur_direction,
         score_salient_centroid_tracking,
         score_salient_rotation_tracking,
     )
@@ -38,6 +39,7 @@ def load_harness_modules(workspace_root: Path):
         "prepare_render_invocation": prepare_render_invocation,
         "score_frame_sequences": score_frame_sequences,
         "score_motion": score_motion,
+        "score_motion_blur_direction": score_motion_blur_direction,
         "score_salient_centroid_tracking": score_salient_centroid_tracking,
         "score_salient_rotation_tracking": score_salient_rotation_tracking,
         "create_motion_visualizations": create_motion_visualizations,
