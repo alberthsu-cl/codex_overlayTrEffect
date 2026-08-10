@@ -331,7 +331,7 @@ def register_effect(manifest_file: Path, target_root: Path) -> dict[str, Any]:
 
     fx_info_entry = (
         "\t\t{\n"
-        "\t\t\t// Agent-generated dissolve effect\n"
+        f"\t\t\t// Agent-generated {match.group(1)} effect\n"
         f'\t\t\t"{cpp_effect_id}",\n'
         f'\t\t\t"Generated {match.group(1)} {match.group(2)}",\n'
         f"\t\t\t{index}\n"
