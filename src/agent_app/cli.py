@@ -38,6 +38,7 @@ from .candidate_controller import (
     start_refinement_phase,
 )
 from .sample_workspace import initialize_sample_workspace
+from .reconciliation import reconcile_and_write
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -364,6 +365,11 @@ def main(argv: list[str] | None = None) -> int:
                 result["diagnostics"] = diagnostics
         elif args.command == "candidate-status":
             result = candidate_status(Path(args.manifest).resolve())
+        elif args.command == "reconcile-analyses":
+            result = reconcile_and_write(
+                analysis_files=[Path(path).resolve() for path in args.analysis],
+                output_file=Path(args.output).resolve(),
+            )
         else:
             result = build_report(
                 analysis_file=Path(args.analysis).resolve(),
@@ -726,6 +732,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="show controller baseline, history, budgets, and blocked hypothesis categories",
     )
     candidate_status_cmd.add_argument("--manifest", required=True)
+
+    reconcile_analyses = subparsers.add_parser(
+        "reconcile-analyses",
+        help="cross-check multiple transition_structure.json artifacts for the same effect and "
+        "split findings into convergent (cross-sample agreed) vs divergent (sample-specific)",
+    )
+    reconcile_analyses.add_argument("--analysis", required=True, nargs="+")
+    reconcile_analyses.add_argument("--output", required=True)
 
     report = subparsers.add_parser("report", help="combine analysis, design, render, and score artifacts")
     report.add_argument("--analysis", required=True)

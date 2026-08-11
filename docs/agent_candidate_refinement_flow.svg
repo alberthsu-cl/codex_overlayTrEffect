@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1120" viewBox="0 0 1800 1120" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="2170" height="1300" viewBox="0 0 2170 1300" role="img" aria-labelledby="title desc">
   <title id="title">Agent-Driven Flow</title>
-  <desc id="desc">The agent interprets and edits a transition candidate. Command-driven local tools prepare inputs, build, render, score, report, and promote the same FX ID.</desc>
+  <desc id="desc">The agent interprets and edits a transition candidate. Command-driven local tools prepare inputs from multiple diverse samples, reconcile their analyses, build, render, score, report, and promote the same FX ID.</desc>
   <defs>
     <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="userSpaceOnUse">
       <path d="M0,0 L12,6 L0,12 Z" fill="#233044"/>
@@ -12,6 +12,7 @@
       .command { fill: #e8f3ff; stroke: #23639b; stroke-width: 2.5; rx: 12; ry: 12; }
       .artifact { fill: #effaf1; stroke: #2c7a4b; stroke-width: 2.5; rx: 12; ry: 12; }
       .decision { fill: #fff7e6; stroke: #a46a00; stroke-width: 2.5; rx: 12; ry: 12; }
+      .repeat { fill: rgba(122,138,163,0.07); stroke: #7a8aa3; stroke-width: 2; stroke-dasharray: 9 7; rx: 14; ry: 14; }
       .title { font: 700 32px "Segoe UI", Arial, sans-serif; fill: #152238; }
       .band-title { font: 700 22px "Segoe UI", Arial, sans-serif; fill: #34445b; }
       .text { font: 20px "Segoe UI", Arial, sans-serif; fill: #172235; }
@@ -23,19 +24,21 @@
     </style>
   </defs>
 
-  <rect class="bg" x="0" y="0" width="1800" height="1120"/>
+  <rect class="bg" x="0" y="0" width="2170" height="1300"/>
   <text class="title" x="50" y="52">Agent-Driven Flow</text>
-  <text class="small" x="50" y="82">Motion diagnostics guide the agent's interpretation; one registered FX ID is refined in an isolated workspace.</text>
+  <text class="small" x="50" y="82">Diverse samples (1 primary + 2 secondary) are reconciled before design; one registered FX ID is still refined and evaluated against the primary.</text>
 
-  <rect class="codex" x="1040" y="32" width="210" height="42"/>
-  <text class="legend" x="1145" y="59" text-anchor="middle">Agent inference / editing</text>
-  <rect class="command" x="1270" y="32" width="210" height="42"/>
-  <text class="legend" x="1375" y="59" text-anchor="middle">Command-driven tools</text>
-  <rect class="artifact" x="1500" y="32" width="210" height="42"/>
-  <text class="legend" x="1605" y="59" text-anchor="middle">Artifact / source</text>
+  <rect class="codex" x="1410" y="32" width="210" height="42"/>
+  <text class="legend" x="1515" y="59" text-anchor="middle">Agent inference / editing</text>
+  <rect class="command" x="1640" y="32" width="210" height="42"/>
+  <text class="legend" x="1745" y="59" text-anchor="middle">Command-driven tools</text>
+  <rect class="artifact" x="1870" y="32" width="210" height="42"/>
+  <text class="legend" x="1975" y="59" text-anchor="middle">Artifact / source</text>
 
-  <rect class="band" x="30" y="115" width="1740" height="235" rx="16"/>
-  <text class="band-title" x="55" y="150"> Understand the sample</text>
+  <rect class="band" x="30" y="115" width="2100" height="235" rx="16"/>
+  <text class="band-title" x="55" y="150">Understand the samples</text>
+
+  <rect class="repeat" x="45" y="178" width="900" height="124"/>
 
   <rect class="command" x="55" y="185" width="205" height="105"/>
   <text class="text" x="157" y="225" text-anchor="middle">Prepare video</text>
@@ -50,29 +53,45 @@
   <text class="text" x="607" y="253" text-anchor="middle">analysis</text>
 
   <rect class="artifact" x="730" y="185" width="205" height="105"/>
-  <text class="text" x="832" y="225" text-anchor="middle">transition_</text>
-  <text class="text" x="832" y="253" text-anchor="middle">analysis.json</text>
+  <text class="text" x="832" y="215" text-anchor="middle">transition_</text>
+  <text class="text" x="832" y="240" text-anchor="middle">analysis.json</text>
+  <text class="small" x="832" y="270" text-anchor="middle">(x3 - one per sample)</text>
 
   <rect class="command" x="955" y="185" width="205" height="105"/>
-  <text class="text" x="1057" y="225" text-anchor="middle">Prepare source</text>
-  <text class="small" x="1057" y="255" text-anchor="middle">A/B frames + reference</text>
+  <text class="text" x="1057" y="225" text-anchor="middle">Reconcile analyses</text>
+  <text class="small" x="1057" y="255" text-anchor="middle">diff samples, split findings</text>
 
-  <rect class="codex" x="1180" y="185" width="205" height="105"/>
-  <text class="text" x="1282" y="225" text-anchor="middle">Agent effect</text>
-  <text class="text" x="1282" y="253" text-anchor="middle">design and tuning</text>
+  <rect class="artifact" x="1180" y="185" width="205" height="105"/>
+  <text class="text" x="1282" y="225" text-anchor="middle">cross_sample_</text>
+  <text class="text" x="1282" y="253" text-anchor="middle">consensus.json</text>
 
-  <rect class="artifact" x="1465" y="185" width="205" height="105"/>
-  <text class="text" x="1567" y="225" text-anchor="middle">effect_</text>
-  <text class="text" x="1567" y="253" text-anchor="middle">design.json</text>
+  <rect class="command" x="1405" y="185" width="205" height="105"/>
+  <text class="text" x="1507" y="225" text-anchor="middle">Prepare source</text>
+  <text class="small" x="1507" y="255" text-anchor="middle">A/B + reference (primary)</text>
+
+  <rect class="codex" x="1630" y="185" width="205" height="105"/>
+  <text class="text" x="1732" y="225" text-anchor="middle">Agent effect</text>
+  <text class="text" x="1732" y="253" text-anchor="middle">design and tuning</text>
+
+  <rect class="artifact" x="1855" y="185" width="205" height="105"/>
+  <text class="text" x="1957" y="225" text-anchor="middle">effect_</text>
+  <text class="text" x="1957" y="253" text-anchor="middle">design.json</text>
+
+  <text class="caption" x="495" y="328" text-anchor="middle">Repeated once per sample - 1 primary + 2 secondary videos</text>
 
   <path class="line" d="M260 237 H280"/>
   <path class="line" d="M485 237 H505"/>
   <path class="line" d="M710 237 H730"/>
   <path class="line" d="M935 237 H955"/>
   <path class="line" d="M1160 237 H1180"/>
-  <path class="line" d="M1385 237 H1465"/>
+  <path class="line" d="M1385 237 H1405"/>
+  <path class="line" d="M1610 237 H1630"/>
+  <path class="line" d="M1835 237 H1855"/>
 
-  <rect class="band" x="30" y="380" width="1740" height="235" rx="16"/>
+  <path class="line" d="M832 290 V335 H1732 V290"/>
+  <text class="caption" x="1282" y="325" text-anchor="middle">primary sample's analysis (direct input)</text>
+
+  <rect class="band" x="30" y="380" width="2100" height="235" rx="16"/>
   <text class="band-title" x="55" y="415">Candidate setup</text>
 
   <rect class="decision" x="55" y="450" width="250" height="105"/>
@@ -99,9 +118,9 @@
   <path class="line" d="M605 502 H655"/>
   <path class="line" d="M906 502 H955"/>
   <path class="line" d="M1205 502 H1255"/>
-  <path class="line" d="M1567 290 V345 H180 V450"/>
+  <path class="line" d="M1957 290 V345 H180 V450"/>
 
-  <rect class="band" x="30" y="645" width="1740" height="265" rx="16"/>
+  <rect class="band" x="30" y="645" width="2100" height="265" rx="16"/>
   <text class="band-title" x="55" y="680">Deterministic evaluation loop</text>
 
   <rect class="command" x="55" y="715" width="250" height="105"/>
@@ -143,5 +162,22 @@
   <text class="text" x="1645" y="988" text-anchor="middle">Validated active FX ID</text>
   <text class="small" x="1645" y="1016" text-anchor="middle">ModelGenerated\\CandidateFxID_xx</text>
 
-  <text class="caption" x="55" y="1080">The agent owns interpretation and source edits. Commands own preparation, build, rendering, scoring, backups, and reports.</text>
+  <path class="line" d="M1645 1035 V1100"/>
+
+  <rect class="band" x="30" y="1060" width="2100" height="170" rx="16"/>
+  <text class="band-title" x="55" y="1095">Secondary regression check (advisory, non-blocking)</text>
+
+  <rect class="command" x="1520" y="1100" width="260" height="95"/>
+  <text class="text" x="1650" y="1138" text-anchor="middle">Render + score</text>
+  <text class="small" x="1650" y="1168" text-anchor="middle">vs. 2 secondary samples</text>
+
+  <path class="line" d="M1780 1147 H1830"/>
+
+  <rect class="artifact" x="1830" y="1100" width="300" height="95"/>
+  <text class="text" x="1980" y="1133" text-anchor="middle">secondary_</text>
+  <text class="text" x="1980" y="1158" text-anchor="middle">regression_notes.json</text>
+
+  <text class="caption" x="55" y="1215">Runs once after the primary candidate is accepted. A mismatch here is flagged for review, not auto-rejected, and does not reopen the refinement loop.</text>
+
+  <text class="caption" x="55" y="1270">The agent owns interpretation and source edits. Commands own preparation, build, rendering, scoring, backups, and reports.</text>
 </svg>
