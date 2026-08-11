@@ -813,6 +813,17 @@ def score_candidate(
                 frame_end=score["transition_window"]["frame_end"],
                 ffmpeg_path=ffmpeg_path,
             )
+        rgb_slice_scorer = modules.get("score_dense_rgb_slices")
+        if rgb_slice_scorer is not None:
+            score["dense_rgb_slices"] = rgb_slice_scorer(
+                candidate=candidate,
+                reference=reference,
+                width=width,
+                height=height,
+                frame_start=score["transition_window"]["frame_start"],
+                frame_end=score["transition_window"]["frame_end"],
+                ffmpeg_path=ffmpeg_path,
+            )
         motion_scorer = modules.get("score_motion")
         if motion_scorer is not None:
             motion_metrics = motion_scorer(

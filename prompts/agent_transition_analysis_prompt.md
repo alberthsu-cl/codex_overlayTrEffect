@@ -86,6 +86,12 @@ Evaluation policy:
   `foreground_body_scale_error`, `foreground_body_translation_error`,
   `foreground_body_pivot_error`,
   `foreground_body_rotation_direction_agreement`, `geometry_similarity`).
+- When dense spatial slices and RGB-channel separation are both explicit,
+  use `dense_rgb_slice_similarity` as a primary metric and guardrail. Its
+  components (`slice_structure_similarity`, `rgb_separation_similarity`, and
+  `rgb_slice_coherence`) are diagnostic/advisory; the composite compares their
+  measured density and magnitude to the reference rather than rewarding more
+  distortion without limit.
 - For a single full-frame rotation, scale, perspective-card, or flip effect,
   use the relevant affine-transform errors as primary metrics. Keep pixel
   metrics advisory unless pixel fidelity is the main deliverable. Endpoint

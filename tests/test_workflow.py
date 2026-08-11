@@ -38,6 +38,7 @@ from agent_app.candidate_controller import (
     _magnitude_findings,
     _metrics_from_report,
     _motion_refinement_priority,
+    _artifact_requires_dense_rgb_slices,
     _pivot_is_conditioned,
     _normalize_selection_policy,
     _select_outcome,
@@ -190,6 +191,95 @@ class WorkflowTests(unittest.TestCase):
         self.assertAlmostEqual(metrics["foreground_body_rotation_error"], 14.5)
         self.assertGreater(metrics["foreground_body_translation_error"], 0.0)
         self.assertEqual(metrics["foreground_body_rotation_direction_agreement"], 1.0)
+
+    def test_dense_rgb_slice_report_exposes_selection_metrics(self) -> None:
+        report = {
+            "score": {
+                "transition_window": {
+                    "mse": 10.0, "mae": 2.0, "psnr_db": 30.0, "ssim": 0.8,
+                    "frame_start": 0, "frame_end": 1, "frame_count": 2,
+                },
+                "endpoint_checks": {
+                    "before_transition": {"mse": 0.0, "ssim": 1.0},
+                    "after_transition": {"mse": 0.0, "ssim": 1.0},
+                },
+                "dense_rgb_slices": {
+                    "status": "estimated",
+                    "confidence": 0.9,
+                    "slice_structure_similarity": 0.7,
+                    "rgb_separation_similarity": 0.8,
+                    "rgb_slice_coherence": 0.75,
+                    "dense_rgb_slice_similarity": 0.749,
+                },
+            }
+        }
+        metrics = _metrics_from_report(report)
+        self.assertAlmostEqual(metrics["dense_rgb_slice_similarity"], 0.749)
+        self.assertAlmostEqual(metrics["rgb_separation_similarity"], 0.8)
+
+    def test_dense_rgb_slice_policy_accepts_composite_improvement(self) -> None:
+        endpoints = {
+            "before_transition": {"mse": 0.0, "ssim": 1.0},
+            "after_transition": {"mse": 0.0, "ssim": 1.0},
+        }
+        baseline = {
+            "iteration": 1,
+            "metrics": {
+                "dense_rgb_slice_similarity": 0.60,
+                "ssim": 0.70,
+                "endpoint_checks": endpoints,
+            },
+        }
+        candidate = {
+            "dense_rgb_slice_similarity": 0.65,
+            "ssim": 0.699,
+            "endpoint_checks": endpoints,
+        }
+        policy = {
+            "profile": "dense_rgb_slices",
+            "source": "test",
+            "primary_metrics": ["dense_rgb_slice_similarity"],
+            "guardrail_metrics": ["dense_rgb_slice_similarity", "ssim"],
+            "advisory_metrics": [],
+        }
+        outcome, _, decision = _select_outcome_with_decision(baseline, candidate, policy)
+        self.assertEqual(outcome, "accepted")
+        self.assertEqual(
+            decision["materially_improved_primary_metrics"], ["dense_rgb_slice_similarity"]
+        )
+
+    def test_dense_rgb_slice_requirement_is_inferred_from_artifact(self) -> None:
+        artifact = {
+            "transition": {"summary": "Dense RGB-separated slice fragments replace the scene."},
+            "visual_signals": {"rgb_split": True},
+            "planner_hints": {"visual_primitives": ["changing horizontal slice hierarchy"]},
+        }
+        self.assertTrue(_artifact_requires_dense_rgb_slices(artifact))
+
+    def test_dense_rgb_slice_deficit_drives_next_request_priority(self) -> None:
+        priority = _motion_refinement_priority(
+            {
+                "history": [
+                    {
+                        "iteration": 2,
+                        "hypothesis_category": "regions",
+                        "metrics": {
+                            "dense_rgb_slices": {
+                                "status": "estimated",
+                                "confidence": 0.9,
+                                "dense_rgb_slice_similarity": 0.62,
+                                "slice_structure_similarity": 0.5,
+                                "rgb_separation_similarity": 0.8,
+                                "rgb_slice_coherence": 0.7,
+                            }
+                        },
+                    }
+                ]
+            }
+        )
+        self.assertEqual(priority["focus"], "dense_rgb_slices")
+        self.assertEqual(priority["weakest_component"], "slice_structure")
+        self.assertEqual(priority["recommended_categories"], ["regions", "shader_structure"])
 
     def test_transform_policy_treats_ssim_as_advisory(self) -> None:
         policy = _normalize_selection_policy(

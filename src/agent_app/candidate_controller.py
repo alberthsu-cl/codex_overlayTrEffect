@@ -48,6 +48,10 @@ SELECTION_METRICS = (
     "salient_rotation_error",
     "salient_rotation_max_error",
     "motion_blur_direction_agreement",
+    "slice_structure_similarity",
+    "rgb_separation_similarity",
+    "rgb_slice_coherence",
+    "dense_rgb_slice_similarity",
 )
 LOWER_IS_BETTER_METRICS = {
     "mse",
@@ -93,11 +97,19 @@ METRIC_IMPROVEMENT_THRESHOLDS = {
     "motion_similarity": MOTION_SIMILARITY_IMPROVEMENT,
     "foreground_body_rotation_direction_agreement": 0.05,
     "geometry_similarity": 0.02,
+    "slice_structure_similarity": 0.02,
+    "rgb_separation_similarity": 0.02,
+    "rgb_slice_coherence": 0.02,
+    "dense_rgb_slice_similarity": 0.02,
 }
 METRIC_REGRESSION_TOLERANCES = {
     "motion_similarity": MOTION_SIMILARITY_REGRESSION_TOLERANCE,
     "foreground_body_rotation_direction_agreement": 0.05,
     "geometry_similarity": 0.03,
+    "slice_structure_similarity": 0.04,
+    "rgb_separation_similarity": 0.04,
+    "rgb_slice_coherence": 0.04,
+    "dense_rgb_slice_similarity": 0.03,
 }
 # foreground_body_translation_error/pivot_error/scale_error can all have a
 # baseline value that is already tiny (ORB similarity-transform fits on a
@@ -364,6 +376,9 @@ def build_next_iteration_packet(
     evaluate_after_edit: bool = False,
 ) -> dict[str, Any]:
     state = _load_or_create_state(candidate_manifest_file)
+    selection_policy = _resolve_selection_policy(candidate_manifest_file)
+    if "dense_rgb_slice_similarity" in selection_policy.get("primary_metrics", []):
+        _hydrate_dense_rgb_slice_state(state)
     candidate_dir = candidate_manifest_file.parent
     iteration_records = _iteration_records(candidate_dir)
     known_iterations = [item[0] for item in iteration_records]
@@ -624,6 +639,8 @@ def record_candidate_evaluation(
         )
     metrics = _metrics_from_report(load_json(report_file))
     selection_policy = _resolve_selection_policy(candidate_manifest_file)
+    if "dense_rgb_slice_similarity" in selection_policy.get("primary_metrics", []):
+        _hydrate_dense_rgb_slice_state(state)
     outcome, reason, decision = _select_outcome_with_decision(
         state.get("baseline"), metrics, selection_policy
     )
@@ -991,6 +1008,20 @@ def _metrics_from_report(report: dict[str, Any]) -> dict[str, Any]:
     edge_content_policy = score.get("edge_content_policy")
     if isinstance(edge_content_policy, dict):
         metrics["edge_content_policy"] = edge_content_policy
+    rgb_slices = score.get("dense_rgb_slices")
+    if isinstance(rgb_slices, dict):
+        metrics["dense_rgb_slices"] = rgb_slices
+        confidence = rgb_slices.get("confidence")
+        if rgb_slices.get("status") == "estimated" and isinstance(confidence, (int, float)):
+            for metric in (
+                "slice_structure_similarity",
+                "rgb_separation_similarity",
+                "rgb_slice_coherence",
+                "dense_rgb_slice_similarity",
+            ):
+                value = rgb_slices.get(metric)
+                if isinstance(value, (int, float)):
+                    metrics[metric] = float(value)
     blur_direction = score.get("motion_blur_direction")
     if isinstance(blur_direction, dict):
         metrics["motion_blur_direction"] = blur_direction
@@ -1008,6 +1039,87 @@ def _metrics_from_report(report: dict[str, Any]) -> dict[str, Any]:
                 if isinstance(value, (int, float)):
                     metrics[f"peak_{metric}"] = float(value)
     return metrics
+
+
+def _hydrate_dense_rgb_slice_state(state: dict[str, Any]) -> None:
+    """Backfill the new metric for pre-feature reports without rerendering.
+
+    Historical reports retain their candidate/reference frame paths, so the
+    diagnostic can be recomputed from immutable render artifacts. This lets the
+    first post-upgrade refinement request and evaluation compare against the
+    established baseline instead of spending an iteration merely bootstrapping
+    the new metric.
+    """
+    records: list[dict[str, Any]] = []
+    baseline = state.get("baseline")
+    if isinstance(baseline, dict):
+        records.append(baseline)
+    history = [item for item in state.get("history", []) if isinstance(item, dict)]
+    if history:
+        records.append(max(history, key=lambda item: int(item.get("iteration", -1))))
+    for record in records:
+        metrics = record.get("metrics")
+        report_file = record.get("report_file")
+        if not isinstance(metrics, dict) or "dense_rgb_slice_similarity" in metrics:
+            continue
+        if not isinstance(report_file, str) or not Path(report_file).is_file():
+            continue
+        diagnostic = _score_dense_rgb_slices_from_report(Path(report_file))
+        if diagnostic is None:
+            continue
+        metrics["dense_rgb_slices"] = diagnostic
+        if diagnostic.get("status") != "estimated":
+            continue
+        for metric in (
+            "slice_structure_similarity",
+            "rgb_separation_similarity",
+            "rgb_slice_coherence",
+            "dense_rgb_slice_similarity",
+        ):
+            value = diagnostic.get(metric)
+            if isinstance(value, (int, float)):
+                metrics[metric] = float(value)
+
+
+def _score_dense_rgb_slices_from_report(report_file: Path) -> dict[str, Any] | None:
+    report = load_json(report_file)
+    score = report.get("score", report)
+    if not isinstance(score, dict):
+        return None
+    existing = score.get("dense_rgb_slices")
+    if isinstance(existing, dict):
+        return existing
+    candidate = score.get("candidate")
+    reference = score.get("reference")
+    window = score.get("transition_window")
+    width = score.get("width")
+    height = score.get("height")
+    if not (
+        isinstance(candidate, str)
+        and isinstance(reference, str)
+        and isinstance(window, dict)
+        and isinstance(width, int)
+        and isinstance(height, int)
+    ):
+        return None
+    candidate_path = Path(candidate)
+    reference_path = Path(reference)
+    if not candidate_path.exists() or not reference_path.exists():
+        return None
+    from .harness_bridge import load_harness_modules
+
+    workspace_root = Path(__file__).resolve().parents[3]
+    scorer = load_harness_modules(workspace_root).get("score_dense_rgb_slices")
+    if scorer is None:
+        return None
+    return scorer(
+        candidate=candidate_path,
+        reference=reference_path,
+        width=width,
+        height=height,
+        frame_start=int(window.get("frame_start", 0)),
+        frame_end=int(window.get("frame_end", 0)),
+    )
 
 
 def _number(payload: dict[str, Any], key: str) -> float:
@@ -1280,6 +1392,8 @@ def _resolve_selection_policy(candidate_manifest_file: Path) -> dict[str, Any]:
         selection = policy.get("selection") if isinstance(policy, dict) else None
         normalized = _normalize_selection_policy(selection, f"{label}.evaluation_policy.selection")
         if normalized is not None:
+            if _artifact_requires_dense_rgb_slices(artifact):
+                return _with_dense_rgb_slice_selection(normalized)
             return normalized
     vocabulary = " ".join(_artifact_selection_vocabulary(artifact) for _, artifact in artifacts).casefold()
     transform_markers = ("rotation", "rotate", "scale", "perspective", "card", "flip", "reflection")
@@ -1296,7 +1410,42 @@ def _resolve_selection_policy(candidate_manifest_file: Path) -> dict[str, Any]:
             "guardrail_metrics": [],
             "advisory_metrics": ["mse", "mae", "peak_mse", "ssim", "peak_ssim", "motion_similarity"],
         }
+    if _vocabulary_requires_dense_rgb_slices(vocabulary):
+        return _with_dense_rgb_slice_selection(_legacy_selection_policy())
     return _legacy_selection_policy()
+
+
+def _artifact_requires_dense_rgb_slices(artifact: dict[str, Any]) -> bool:
+    signals = artifact.get("visual_signals")
+    explicit_rgb = isinstance(signals, dict) and signals.get("rgb_split") is True
+    vocabulary = _artifact_selection_vocabulary(artifact).casefold()
+    return _vocabulary_requires_dense_rgb_slices(vocabulary, explicit_rgb=explicit_rgb)
+
+
+def _vocabulary_requires_dense_rgb_slices(vocabulary: str, explicit_rgb: bool = False) -> bool:
+    has_rgb = explicit_rgb or any(marker in vocabulary for marker in ("rgb", "channel separation", "chromatic"))
+    has_slices = any(marker in vocabulary for marker in ("slice", "strip", "segmented"))
+    has_density = any(marker in vocabulary for marker in ("dense", "many", "hierarchy", "fragment"))
+    return has_rgb and has_slices and has_density
+
+
+def _with_dense_rgb_slice_selection(policy: dict[str, Any]) -> dict[str, Any]:
+    result = dict(policy)
+    result["profile"] = "dense_rgb_slices"
+    result["source"] = f"{policy.get('source', 'artifact_inference')} (dense RGB-slice objective)"
+    result["primary_metrics"] = list(dict.fromkeys([
+        "dense_rgb_slice_similarity", *policy.get("primary_metrics", [])
+    ]))
+    result["guardrail_metrics"] = list(dict.fromkeys([
+        "dense_rgb_slice_similarity", "ssim", "mse", *policy.get("guardrail_metrics", [])
+    ]))
+    result["advisory_metrics"] = list(dict.fromkeys([
+        *policy.get("advisory_metrics", []),
+        "slice_structure_similarity",
+        "rgb_separation_similarity",
+        "rgb_slice_coherence",
+    ]))
+    return result
 
 
 def _candidate_sample_root(candidate_manifest_file: Path) -> Path | None:
@@ -1858,6 +2007,39 @@ def _motion_refinement_priority(state: dict[str, Any]) -> dict[str, Any]:
     if not scored:
         return {"level": "normal", "reason": "no prior refinement motion metrics"}
     latest = max(scored, key=lambda item: int(item.get("iteration", -1)))
+    rgb_slices = latest["metrics"].get("dense_rgb_slices")
+    if isinstance(rgb_slices, dict):
+        confidence = rgb_slices.get("confidence")
+        composite = rgb_slices.get("dense_rgb_slice_similarity")
+        if (
+            rgb_slices.get("status") == "estimated"
+            and isinstance(confidence, (int, float))
+            and confidence >= 0.55
+            and isinstance(composite, (int, float))
+            and composite < 0.82
+        ):
+            components = {
+                "slice_structure": rgb_slices.get("slice_structure_similarity"),
+                "rgb_separation": rgb_slices.get("rgb_separation_similarity"),
+                "rgb_slice_coherence": rgb_slices.get("rgb_slice_coherence"),
+            }
+            available = {
+                key: float(value) for key, value in components.items() if isinstance(value, (int, float))
+            }
+            weakest = min(available, key=available.get) if available else "dense_rgb_slices"
+            categories = {
+                "slice_structure": ["regions", "shader_structure"],
+                "rgb_separation": ["displacement", "shader_structure"],
+                "rgb_slice_coherence": ["regions", "displacement", "shader_structure"],
+            }.get(weakest, ["regions", "displacement", "shader_structure"])
+            return {
+                "level": "high",
+                "focus": "dense_rgb_slices",
+                "reason": "reference-relative scoring identifies dense RGB-slice structure as the dominant deficit",
+                "dense_rgb_slices": rgb_slices,
+                "weakest_component": weakest,
+                "recommended_categories": categories,
+            }
     motion = latest["metrics"].get("motion")
     topology = latest["metrics"].get("motion_topology")
     if isinstance(topology, dict) and topology.get("status") == "structural_mismatch":
@@ -2189,6 +2371,16 @@ def _refinement_priority_instruction(priority: Any) -> str:
             f"(region-topology match {region_match_rate:.3f}, direction match {direction_match_rate:.3f}). "
             "First model the groups with signed displacement and straight-line partitions; use an arbitrary region mask "
             "only when repeated reference evidence rules out a piecewise-linear partition."
+        )
+    if priority.get("focus") == "dense_rgb_slices":
+        diagnostic = priority.get("dense_rgb_slices") if isinstance(priority.get("dense_rgb_slices"), dict) else {}
+        return (
+            "Current refinement priority: dense RGB-separated slice fidelity. The reference-relative composite is "
+            f"{diagnostic.get('dense_rgb_slice_similarity', 'unknown')} with confidence "
+            f"{diagnostic.get('confidence', 'unknown')}; its weakest component is "
+            f"`{priority.get('weakest_component', 'unknown')}`. Prefer one of: {categories}. "
+            "Match the reference slice density, RGB offset magnitude, and their spatial overlap; do not maximize "
+            "noise, slice count, or chromatic offset beyond the measured target."
         )
     if priority.get("focus") == "signed_direction":
         topology = priority.get("topology") if isinstance(priority.get("topology"), dict) else {}

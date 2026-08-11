@@ -76,6 +76,11 @@ Evaluation policy:
   `foreground_body_rotation_error`, `foreground_body_scale_error`,
   `foreground_body_translation_error`, `foreground_body_pivot_error`,
   `foreground_body_rotation_direction_agreement`, and `geometry_similarity`.
+- For a dense RGB-separated slice deliverable, carry forward
+  `dense_rgb_slice_similarity` as both primary and guardrail, with
+  `slice_structure_similarity`, `rgb_separation_similarity`, and
+  `rgb_slice_coherence` advisory. Do not replace it with generic SSIM or motion
+  scoring alone.
 - For rotation, scale, perspective-card, reflection, or flip effects, make the
   relevant signed transform errors primary. Keep MSE/MAE/peak metrics advisory
   unless pixel fidelity is the main deliverable; endpoints remain hard checks.
