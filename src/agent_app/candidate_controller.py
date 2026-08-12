@@ -459,6 +459,7 @@ def build_next_iteration_packet(
     reference_diagnostics, reference_diagnostic_video = _reference_diagnostics(analysis_file)
     reference_edge_diagnostics = _reference_edge_diagnostics(analysis_file)
     reference_grid_density_diagnostics = _reference_grid_density_diagnostics(analysis_file)
+    reference_edge_glow_diagnostics = _reference_edge_glow_diagnostics(analysis_file)
     primary_grid_density_status = None
     if reference_grid_density_diagnostics is not None:
         try:
@@ -517,6 +518,9 @@ def build_next_iteration_packet(
             str(reference_grid_density_diagnostics) if reference_grid_density_diagnostics else None
         ),
         "secondary_grid_density_diagnostics": secondary_grid_density_diagnostics or None,
+        "reference_edge_glow_diagnostics_file": (
+            str(reference_edge_glow_diagnostics) if reference_edge_glow_diagnostics else None
+        ),
         "refinement_priority": refinement_priority,
         # Every over-threshold signal, not only the winner: a lower-ranked entry
         # can still be the real defect when thresholds across different units are
@@ -2016,6 +2020,11 @@ def _reference_grid_density_diagnostics(analysis_file: Path) -> Path | None:
     return diagnostics_file if diagnostics_file.is_file() else None
 
 
+def _reference_edge_glow_diagnostics(analysis_file: Path) -> Path | None:
+    diagnostics_file = analysis_file.parent.parent / "diagnostics" / "edge_glow_diagnostics.json"
+    return diagnostics_file if diagnostics_file.is_file() else None
+
+
 def _secondary_grid_density_diagnostics(
     analysis_file: Path, candidate_manifest_file: Path
 ) -> list[dict[str, Any]]:
@@ -2090,6 +2099,28 @@ def _secondary_grid_density_instruction(packet: dict[str, Any]) -> str:
         "expect, not as this sample's actual grid count - a different sample's grid is not guaranteed to "
         "match this one's. Prefer a direct visual count of this sample's own reference frames over copying "
         "a secondary's number outright.\n"
+    )
+
+
+def _edge_glow_instruction(packet: dict[str, Any]) -> str:
+    diagnostics_file = packet.get("reference_edge_glow_diagnostics_file")
+    if not diagnostics_file:
+        return ""
+    try:
+        diagnostics = load_json(Path(diagnostics_file))
+    except (OSError, ValueError):
+        return ""
+    if not isinstance(diagnostics, dict) or diagnostics.get("status") != "detected":
+        return ""
+    delta = diagnostics.get("mean_brightness_delta")
+    delta_text = f"{delta:.0f}" if isinstance(delta, (int, float)) else "a measurable amount"
+    return (
+        "\nEdge-glow note: the reference's own mask boundary is measurably brighter than the region on "
+        f"both sides of it (mean excess brightness {delta_text}), not just a color midway between source "
+        "A and source B. Plain alpha blending between the two sources can only interpolate their colors "
+        "and can never exceed both, so this is a rendered highlight along the mask edge that the "
+        "candidate must draw explicitly (for example an additive term keyed to the mask's own edge, not "
+        "just its softness) - it is not reproduced by softening or widening the existing blend.\n"
     )
 
 
@@ -2309,6 +2340,7 @@ def _refinement_request(packet: dict[str, Any], candidate_dir: Path) -> str:
 - {packet['reference_diagnostics_video'] or 'no reference motion diagnostic video'}
 - {packet['reference_edge_diagnostics_file'] or 'no reference edge-content diagnostics'}
 - {packet.get('reference_grid_density_diagnostics_file') or 'no reference grid-density diagnostics'}
+- {packet.get('reference_edge_glow_diagnostics_file') or 'no reference edge-glow diagnostics'}
 
 Edit only:
 {candidate_dir}
@@ -2319,6 +2351,7 @@ Refine {packet['effect_id']} for iteration {packet['iteration']}.
 {_findings_instruction(packet.get('refinement_findings'))}
 {_reference_curve_instruction(packet.get('reference_curves'))}
 {_secondary_grid_density_instruction(packet)}
+{_edge_glow_instruction(packet)}
 {_escalation_instruction(packet.get('escalation'))}
 Choose exactly one hypothesis category from: {allowed}.
 Do not repeat a rejected category unless you provide new visual evidence.

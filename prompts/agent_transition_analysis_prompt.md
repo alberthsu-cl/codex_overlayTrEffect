@@ -26,6 +26,10 @@ Primary input:
 - optional `grid_density_diagnostics.json`, a deterministic measurement of a
   masked-grid transition's cell density (column/row counts), created locally
   when a prepared source_b is available
+- optional `edge_glow_diagnostics.json`, a deterministic check for whether the
+  transition renders a highlight along its own mask boundary (brighter than
+  the region on both sides, not explainable by an alpha blend alone), created
+  locally when a prepared source_b is available
 
 Output rules:
 - write exactly one JSON object that conforms to the supplied schema
@@ -128,6 +132,18 @@ way "a rectangular grid" is not. When its `status` is `"low_confidence"` or
 could not be reliably measured rather than guessing one. Dense photographic
 texture can defeat this measurement even when a real grid is visible by eye -
 prefer "could not be measured" over a confident-sounding wrong number.
+
+When `edge_glow_diagnostics.json` is provided and its `status` is
+`"detected"`, do not describe a visible line or border at a mask boundary as
+"baked into" either source image without first checking this diagnostic - a
+boundary that is brighter than the region on both of its sides cannot be
+produced by blending source A and source B alone, since a blend only ever
+interpolates between the two, never exceeds both. Record it as a dominant
+signal of the transition itself (a rendered edge highlight distinct from the
+mask blend) in `evidence`, not as a source-content artifact in `limitations`.
+When its `status` is `"not_detected"` or `"not_applicable"`, do not claim an
+edge highlight exists just because a boundary is visible - the visibility may
+be fully explained by the ordinary blend.
 
 Timing boundary:
 - Report timing only for the reference sample video: its stable A/B boundaries,
