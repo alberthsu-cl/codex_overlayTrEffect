@@ -2216,7 +2216,7 @@ Edit only:
 
 Refine {packet['effect_id']} for iteration {packet['iteration']}.
 
-{_refinement_priority_instruction(packet.get('refinement_priority'))}
+{_refinement_priority_instruction(packet.get('refinement_priority'), Path(packet['analysis_file']) if packet.get('analysis_file') else None)}
 {_findings_instruction(packet.get('refinement_findings'))}
 {_reference_curve_instruction(packet.get('reference_curves'))}
 {_escalation_instruction(packet.get('escalation'))}
@@ -2352,7 +2352,85 @@ def _select_prompt_files(analysis_file: Path, include_edge_diagnostics: bool) ->
     return files
 
 
-def _refinement_priority_instruction(priority: Any) -> str:
+_CONSENSUS_FOCUS_KEYWORDS = {
+    "motion_topology": ("motion_axes", "region", "direction"),
+    "signed_direction": ("motion_axes", "direction"),
+    "regional_direction": ("motion_axes", "direction", "region"),
+    "angular_direction": ("motion_axes", "direction", "rotation"),
+    "dense_rgb_slices": ("rgb", "slice"),
+}
+
+
+def _load_cross_sample_consensus(analysis_file: Path | None) -> dict[str, Any] | None:
+    """Load the sibling cross_sample_consensus.json for this candidate's analysis, if any.
+
+    Most candidates are built from a single sample and have no consensus file;
+    this returns None in that case rather than requiring one.
+    """
+    if analysis_file is None:
+        return None
+    consensus_file = Path(analysis_file).parent / "cross_sample_consensus.json"
+    if not consensus_file.exists():
+        return None
+    try:
+        payload = load_json(consensus_file)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(payload, dict) or payload.get("artifact_type") != "cross_sample_consensus":
+        return None
+    return payload
+
+
+def _consensus_annotation(priority: Any, consensus: dict[str, Any] | None) -> str:
+    """Cross-check the current refinement focus against the multi-sample consensus.
+
+    Purely advisory text appended to the generated request - it never changes
+    acceptance mechanics, only tells whoever is choosing a hypothesis whether
+    the property they are about to spend an iteration on is a real, agreed
+    effect trait or a sample-specific quirk of the primary sample alone.
+    """
+    if not consensus or not isinstance(priority, dict):
+        return ""
+    keywords = _CONSENSUS_FOCUS_KEYWORDS.get(priority.get("focus"))
+    if not keywords:
+        return ""
+    sample_count = consensus.get("sample_count", "?")
+    convergent = consensus.get("convergent") if isinstance(consensus.get("convergent"), dict) else {}
+    divergent = consensus.get("divergent") if isinstance(consensus.get("divergent"), dict) else {}
+
+    def _matches(key: str) -> bool:
+        lowered = key.lower()
+        return any(keyword in lowered for keyword in keywords)
+
+    convergent_hits = [key for key in convergent if _matches(key)]
+    divergent_hits = [key for key in divergent if _matches(key)]
+    if not convergent_hits and not divergent_hits:
+        return ""
+
+    parts = []
+    if divergent_hits:
+        named = ", ".join(f"`{key}`" for key in divergent_hits[:3])
+        parts.append(
+            f"the cross-sample consensus ({sample_count} samples) marks {named} as sample-specific (not agreed "
+            "across every sample) - further precision here has limited payoff for generalizing this effect; weigh "
+            "that against spending the remaining iteration budget on a convergent property instead"
+        )
+    if convergent_hits:
+        named = ", ".join(f"`{key}`" for key in convergent_hits[:3])
+        parts.append(
+            f"the consensus marks {named} as convergent (agreed across all {sample_count} samples) - this is a "
+            "real effect property, not sample noise, and safe to invest iteration budget in"
+        )
+    return "\nCross-sample consensus note: " + "; ".join(parts) + "."
+
+
+def _refinement_priority_instruction(priority: Any, analysis_file: Path | None = None) -> str:
+    text = _refinement_priority_base_text(priority)
+    consensus = _load_cross_sample_consensus(analysis_file)
+    return text + _consensus_annotation(priority, consensus)
+
+
+def _refinement_priority_base_text(priority: Any) -> str:
     if not isinstance(priority, dict) or priority.get("level") != "high":
         return (
             "Current refinement priority: normal. Read motion_geometry before choosing a hypothesis. If translation, "
