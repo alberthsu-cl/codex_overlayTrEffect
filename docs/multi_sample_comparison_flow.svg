@@ -1,0 +1,137 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1900" height="1040" viewBox="0 0 1900 1040" role="img" aria-labelledby="title desc">
+  <title id="title">Multi-Sample Comparison Flow</title>
+  <desc id="desc">Two prompts split the multi-sample workflow: a shared consensus pass run once, then an independent build-and-refine pass run once per sample, ending in a visual/delta-based comparison rather than a raw score leaderboard.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L12,6 L0,12 Z" fill="#233044"/>
+    </marker>
+    <style>
+      .bg { fill: #f7f8fa; }
+      .band { fill: #eef2f7; stroke: #d6dde8; stroke-width: 1; }
+      .codex { fill: #f2eaff; stroke: #7048a8; stroke-width: 2.5; rx: 12; ry: 12; }
+      .command { fill: #e8f3ff; stroke: #23639b; stroke-width: 2.5; rx: 12; ry: 12; }
+      .artifact { fill: #effaf1; stroke: #2c7a4b; stroke-width: 2.5; rx: 12; ry: 12; }
+      .decision { fill: #fff7e6; stroke: #a46a00; stroke-width: 2.5; rx: 12; ry: 12; }
+      .repeat { fill: rgba(122,138,163,0.07); stroke: #7a8aa3; stroke-width: 2; stroke-dasharray: 9 7; rx: 14; ry: 14; }
+      .title { font: 700 32px "Segoe UI", Arial, sans-serif; fill: #152238; }
+      .band-title { font: 700 22px "Segoe UI", Arial, sans-serif; fill: #34445b; }
+      .text { font: 20px "Segoe UI", Arial, sans-serif; fill: #172235; }
+      .small { font: 17px "Segoe UI", Arial, sans-serif; fill: #42526a; }
+      .caption { font: 600 17px "Segoe UI", Arial, sans-serif; fill: #42526a; }
+      .legend { font: 600 17px "Segoe UI", Arial, sans-serif; fill: #233044; }
+      .line { fill: none; stroke: #233044; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1900" height="1040"/>
+  <text class="title" x="50" y="52">Multi-Sample Comparison Flow</text>
+  <text class="small" x="50" y="82">Two prompts: one shared analysis pass, then one independent build-and-refine pass per sample - for comparing which sample yields the best result.</text>
+
+  <rect class="codex" x="1140" y="32" width="210" height="42"/>
+  <text class="legend" x="1245" y="59" text-anchor="middle">Agent inference / editing</text>
+  <rect class="command" x="1370" y="32" width="210" height="42"/>
+  <text class="legend" x="1475" y="59" text-anchor="middle">Command-driven tools</text>
+  <rect class="artifact" x="1600" y="32" width="210" height="42"/>
+  <text class="legend" x="1705" y="59" text-anchor="middle">Artifact / file</text>
+
+  <!-- Band 1: consensus pass -->
+  <rect class="band" x="30" y="115" width="1840" height="235" rx="16"/>
+  <text class="band-title" x="55" y="150">Pass 1 - goal_prompt_multi_sample_consensus.txt (run once)</text>
+
+  <rect class="artifact" x="55" y="185" width="255" height="105"/>
+  <text class="text" x="182" y="225" text-anchor="middle">Sample videos</text>
+  <text class="small" x="182" y="255" text-anchor="middle">(A, B, C... multiple samples)</text>
+
+  <rect class="codex" x="335" y="185" width="250" height="105"/>
+  <text class="text" x="460" y="225" text-anchor="middle">Agent: init, prepare,</text>
+  <text class="text" x="460" y="253" text-anchor="middle">analyze (every sample)</text>
+
+  <rect class="artifact" x="610" y="185" width="220" height="105"/>
+  <text class="text" x="720" y="215" text-anchor="middle">transition_</text>
+  <text class="text" x="720" y="240" text-anchor="middle">structure.json</text>
+  <text class="small" x="720" y="270" text-anchor="middle">(x N - one per sample)</text>
+
+  <rect class="command" x="855" y="185" width="250" height="105"/>
+  <text class="text" x="980" y="225" text-anchor="middle">reconcile-analyses</text>
+  <text class="small" x="980" y="255" text-anchor="middle">diff N samples, split findings</text>
+
+  <rect class="artifact" x="1130" y="185" width="250" height="105"/>
+  <text class="text" x="1255" y="215" text-anchor="middle">cross_sample_</text>
+  <text class="text" x="1255" y="240" text-anchor="middle">consensus.json</text>
+  <text class="small" x="1255" y="270" text-anchor="middle">(shared, one file)</text>
+
+  <path class="line" d="M310 237 H335"/>
+  <path class="line" d="M585 237 H610"/>
+  <path class="line" d="M830 237 H855"/>
+  <path class="line" d="M1105 237 H1130"/>
+
+  <!-- Band 2: per-sample build pass -->
+  <rect class="band" x="30" y="380" width="1840" height="310" rx="16"/>
+  <text class="band-title" x="55" y="415">Pass 2 - goal_prompt_multi_sample_build.txt (run once PER sample)</text>
+
+  <rect class="repeat" x="45" y="440" width="1650" height="125"/>
+
+  <rect class="artifact" x="55" y="450" width="260" height="105"/>
+  <text class="text" x="185" y="480" text-anchor="middle">This sample's</text>
+  <text class="text" x="185" y="505" text-anchor="middle">own analysis</text>
+  <text class="small" x="185" y="533" text-anchor="middle">+ shared consensus.json</text>
+
+  <rect class="command" x="340" y="450" width="230" height="105"/>
+  <text class="text" x="455" y="490" text-anchor="middle">Prepare source A/B</text>
+  <text class="small" x="455" y="520" text-anchor="middle">(this sample only)</text>
+
+  <rect class="codex" x="595" y="450" width="250" height="105"/>
+  <text class="text" x="720" y="490" text-anchor="middle">Agent: design</text>
+  <text class="text" x="720" y="518" text-anchor="middle">(own + consensus)</text>
+
+  <rect class="command" x="870" y="450" width="260" height="105"/>
+  <text class="text" x="1000" y="480" text-anchor="middle">build-job -&gt; generate</text>
+  <text class="text" x="1000" y="505" text-anchor="middle">-&gt; register</text>
+  <text class="small" x="1000" y="533" text-anchor="middle">new FX ID each run</text>
+
+  <rect class="command" x="1155" y="450" width="230" height="105"/>
+  <text class="text" x="1270" y="490" text-anchor="middle">3-iteration refine loop</text>
+  <text class="small" x="1270" y="520" text-anchor="middle">init -&gt; evaluate -&gt; continue</text>
+
+  <rect class="artifact" x="1410" y="450" width="270" height="105"/>
+  <text class="text" x="1545" y="480" text-anchor="middle">Accepted candidate</text>
+  <text class="text" x="1545" y="505" text-anchor="middle">+ FX ID (this sample)</text>
+  <text class="small" x="1545" y="533" text-anchor="middle">own workspace, own history</text>
+
+  <path class="line" d="M315 502 H340"/>
+  <path class="line" d="M570 502 H595"/>
+  <path class="line" d="M845 502 H870"/>
+  <path class="line" d="M1130 502 H1155"/>
+  <path class="line" d="M1385 502 H1410"/>
+
+  <text class="caption" x="870" y="592" text-anchor="middle">Repeat this entire pass once per sample, independently - no primary/secondary, each run gets its own FX ID</text>
+
+  <path class="line" d="M1255 350 V370 H185 V450"/>
+
+  <!-- Band 3: comparison -->
+  <rect class="band" x="30" y="730" width="1840" height="170" rx="16"/>
+  <text class="band-title" x="55" y="765">Compare results (not part of either prompt - your judgment call after)</text>
+
+  <rect class="artifact" x="55" y="795" width="280" height="105"/>
+  <text class="text" x="195" y="825" text-anchor="middle">N accepted</text>
+  <text class="text" x="195" y="850" text-anchor="middle">candidates</text>
+  <text class="small" x="195" y="878" text-anchor="middle">(one per sample)</text>
+
+  <rect class="decision" x="365" y="795" width="340" height="105"/>
+  <text class="text" x="535" y="825" text-anchor="middle">Compare: visual</text>
+  <text class="text" x="535" y="850" text-anchor="middle">side-by-side + own delta</text>
+  <text class="small" x="535" y="878" text-anchor="middle">NOT a raw score leaderboard</text>
+
+  <rect class="artifact" x="735" y="795" width="280" height="105"/>
+  <text class="text" x="875" y="825" text-anchor="middle">Best sample's</text>
+  <text class="text" x="875" y="850" text-anchor="middle">effect</text>
+  <text class="small" x="875" y="878" text-anchor="middle">keep &amp; register; archive rest</text>
+
+  <path class="line" d="M335 847 H365"/>
+  <path class="line" d="M705 847 H735"/>
+
+  <path class="line" d="M1545 555 V710 H195 V795"/>
+
+  <text class="caption" x="55" y="960">Every sample goes through the exact same Pass 2 steps independently - the only shared state between them is the Pass 1 consensus file.</text>
+  <text class="caption" x="55" y="990">Raw metric values are not comparable across samples (each scores against its own reference, with different inherent difficulty) - compare deltas and video, not scores.</text>
+</svg>

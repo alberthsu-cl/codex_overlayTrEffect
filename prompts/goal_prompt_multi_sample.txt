@@ -133,15 +133,6 @@ Process:
     blend. Keep the approach general; do not assume a fixed number of regions
     or a horizontal-only transition.
 
-11. Once a baseline iteration is accepted (set-baseline or human-accept), run
-    one non-blocking regression check per secondary sample - however many
-    there are: render and score the accepted FX ID against that secondary
-    sample's own source A/B and reference transition. Do not use
-    --calibrate-progress here and do not start a new candidate phase. Record
-    each result as informational only; a mismatch against any one secondary
-    sample is not grounds to reopen refinement or reject the accepted primary
-    baseline in this run.
-
 Stop when three refinement evaluations have completed and every secondary
 sample's regression check has run, the controller reaches a
 budget/block/failure state, or a required build/evaluation fails. Report the

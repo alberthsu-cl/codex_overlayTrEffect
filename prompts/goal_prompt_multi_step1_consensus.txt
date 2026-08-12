@@ -1,0 +1,72 @@
+/goal
+
+Build the shared cross-sample analysis consensus for multiple sample videos
+of the same transition effect. This is pass 1 of a two-prompt flow used to
+compare which sample produces the best refined result:
+
+1. this prompt - analyze every sample video and produce one shared
+   cross_sample_consensus.json
+2. agent/prompts/goal_prompt_multi_sample_build.txt - run once per sample (as
+   many times as you have samples) to build and refine that sample's own new
+   FX ID, informed by the consensus this prompt produces
+
+This prompt is intentionally analysis-only. It does not plan render jobs,
+generate code, or register anything.
+
+Sample videos (one line per sample; add/remove lines to match your count -
+there is no primary/secondary distinction in this flow, every sample is
+treated the same way):
+D:\PATH\TO\YOUR\SAMPLE_A.mp4
+D:\PATH\TO\YOUR\SAMPLE_B.mp4
+D:\PATH\TO\YOUR\SAMPLE_C.mp4
+
+Sample IDs (one per sample video, same order; these become each sample's own
+work/samples/<id> folder and are what goal_prompt_multi_sample_build.txt
+refers to later):
+YOUR_EFFECT_NAME_A
+YOUR_EFFECT_NAME_B
+YOUR_EFFECT_NAME_C
+
+Shared consensus output location (pick any one sample's analysis folder - the
+choice does not matter, it is just a shared file location every later build
+run will read):
+D:\AI_Harness\agent\work\samples\YOUR_EFFECT_NAME_A\analysis\cross_sample_consensus.json
+
+Work only under:
+D:\AI_Harness\agent\work\samples\YOUR_EFFECT_NAME_A
+D:\AI_Harness\agent\work\samples\YOUR_EFFECT_NAME_B
+D:\AI_Harness\agent\work\samples\YOUR_EFFECT_NAME_C
+
+Process:
+
+1. Initialize every sample workspace with its given sample ID and video.
+
+2. For every sample: prepare 60 reference frames at 1920x1080 and generate
+   reference motion diagnostics.
+
+3. For every sample, analyze it directly using:
+   - agent/prompts/agent_transition_analysis_prompt.md
+   - agent/prompts/agent_transition_analysis_schema.json
+   - that sample's own prepared reference frames and reference motion
+     diagnostics
+
+   Save each valid transition_structure JSON under that sample's own analysis
+   folder. Do not mix sources or diagnostics between samples.
+
+4. Run reconcile-analyses across every sample's transition_structure.json and
+   write the result to the shared consensus output location above. The
+   command accepts any number of --analysis files - list one per sample:
+
+   ```powershell
+   conda run -n harness python agent/src/main.py reconcile-analyses `
+     --analysis "agent\work\samples\YOUR_EFFECT_NAME_A\analysis\transition_structure.json" `
+                "agent\work\samples\YOUR_EFFECT_NAME_B\analysis\transition_structure.json" `
+                "agent\work\samples\YOUR_EFFECT_NAME_C\analysis\transition_structure.json" `
+     --output "agent\work\samples\YOUR_EFFECT_NAME_A\analysis\cross_sample_consensus.json"
+   ```
+
+Stop after step 4 succeeds. Report the consensus output path, the sample
+count it covers, and a short summary of which fields came back convergent
+versus divergent (from the consensus JSON's "convergent"/"divergent" keys) so
+whoever runs goal_prompt_multi_sample_build.txt next has that context without
+re-reading the raw file.

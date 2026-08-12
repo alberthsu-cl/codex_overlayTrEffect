@@ -1,0 +1,111 @@
+/goal
+
+Build and refine one new transition shader FX ID from a single sample video,
+informed by a shared cross-sample consensus that was already produced by
+agent/prompts/goal_prompt_multi_sample_consensus.txt. This is pass 2 of a
+two-prompt flow used to compare which sample produces the best refined
+result - run this prompt once per sample (as many times as you have samples),
+each run producing its own independent FX ID and refinement history. There is
+no primary/secondary distinction: every sample goes through exactly this same
+process.
+
+Sample video:
+D:\PATH\TO\YOUR\SAMPLE.mp4
+
+Sample ID (must already have a prepared and analyzed workspace from
+goal_prompt_multi_sample_consensus.txt - do not re-run initialize/prepare/
+analyze for it here):
+YOUR_EFFECT_NAME_A
+
+Shared consensus file (produced once by goal_prompt_multi_sample_consensus.txt,
+read-only here, shared across every run of this prompt for every sample in
+the set):
+D:\AI_Harness\agent\work\samples\YOUR_EFFECT_NAME_A\analysis\cross_sample_consensus.json
+
+Work only under:
+D:\AI_Harness\agent\work\samples\YOUR_EFFECT_NAME_A
+
+Goal:
+Create one new ModelGenerated FX ID from this sample, establish a valid
+calibrated baseline, and run at most three candidate refinement evaluations
+for that same FX ID.
+
+Process:
+
+1. Prepare source A/B for this sample, using the default endpoint mode:
+   - source A is the sample's original video frame 0
+   - source B is the sample's final decoded video frame
+   - do not require manual frame indices or source-boundary analysis
+
+2. Sync the effect catalog. Analyze the design using:
+   - agent/prompts/effect_design_prompt.md
+   - agent/prompts/effect_design_schema.json
+   - this sample's own transition_structure.json (from its analysis folder)
+   - the shared cross_sample_consensus.json above
+   - current registered OverlayTrEngine effects
+
+   Treat fields the consensus marks convergent (agreed across every sample in
+   the set) as trustworthy structural primitives, safe to encode directly in
+   the shader. Treat fields it marks divergent as approximate; keep them
+   procedural/parametric rather than tuned to this one sample's specifics. A
+   field's support count (e.g. "3 of 4 samples") is a confidence signal, not
+   a majority vote - verify a surprising or high-stakes divergent field
+   against this sample's own reference video rather than trusting the count
+   alone.
+
+   Delivery policy: this sample must produce a new shader deliverable. Assign
+   a unique ModelGenerated\Family_XX FX ID - inspect currently registered IDs
+   immediately before choosing it, since other samples in this same
+   comparison set may already have claimed one while you were working. Do not
+   reuse, renumber, or modify another sample's FX ID or candidate workspace.
+   Existing effects may be cloned only as a starting point; do not modify
+   them.
+
+3. Build the render job from this sample. Generate the effect seed, register
+   it, and initialize its isolated candidate workspace. Derive the effect
+   folder name from target_effect.effect_id; do not invent a second FX ID.
+
+4. Run the initial candidate evaluation against this sample with:
+   - reference transition output window from this sample's transition_structure.json
+   - --calibrate-progress
+   - a unique backup directory
+
+   Confirm the endpoint checks meet baseline tolerance. If they do not, fix
+   the workflow/configuration issue before starting refinement.
+
+5. Configure the candidate evaluation profile using only actual resolved
+   paths, never literal documentation placeholders. Start a shader_refinement
+   phase with max-iterations 3 and max-rejected 3. Generate the first request
+   with --evaluate-after-edit.
+   Do not stop after phase initialization; immediately follow the generated
+   first iteration request.
+
+6. For up to three refinement iterations:
+   - read and follow the newest iteration_NNN_agent_request.md;
+   - edit only that candidate workspace;
+   - run its embedded candidate-evaluate command;
+   - after an accepted, rejected, or tradeoff outcome, run candidate-continue;
+   - use the next generated request.
+   `candidate-continue` is mandatory after every completed evaluation unless
+   the phase is exhausted, blocked, or a build/evaluation failure requires
+   the generated repair request.
+
+   Motion-first rule: when reliable motion coverage is high but direction
+   agreement is weak, investigate regions or displacement before blur or
+   blend. Keep the approach general; do not assume a fixed number of regions
+   or a horizontal-only transition.
+
+Stop when three refinement evaluations have completed, the controller reaches
+a budget/block/failure state, or a required build/evaluation fails. Report
+the final FX ID, selected baseline iteration, final report path, comparison
+video path, and this sample's key metric deltas from its own baseline.
+
+Note for cross-sample comparison: this sample's final metric values are
+scored against its own reference video, not a shared one. Different
+references carry different inherent difficulty (e.g. real-world footage has
+compression noise and camera motion a synthetic pattern does not), so raw
+values are not directly comparable across samples run through this prompt.
+Report deltas from this sample's own baseline (how much it improved) using
+the same field names every run uses, and rely on a visual side-by-side of
+each run's comparison video - not a raw score leaderboard - to judge which
+sample produced the best result.
