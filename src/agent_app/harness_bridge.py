@@ -15,6 +15,7 @@ def load_harness_modules(workspace_root: Path):
 
     from overlay_harness.evaluator import (
         analyze_edge_content_policy,
+        analyze_grid_density,
         analyze_reference_motion,
         analyze_sampler_repetition,
         create_motion_visualizations,
@@ -46,6 +47,7 @@ def load_harness_modules(workspace_root: Path):
         "score_salient_rotation_tracking": score_salient_rotation_tracking,
         "create_motion_visualizations": create_motion_visualizations,
         "analyze_edge_content_policy": analyze_edge_content_policy,
+        "analyze_grid_density": analyze_grid_density,
         "analyze_reference_motion": analyze_reference_motion,
         "analyze_sampler_repetition": analyze_sampler_repetition,
         "build_effect_catalog": build_effect_catalog,

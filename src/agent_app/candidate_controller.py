@@ -458,6 +458,7 @@ def build_next_iteration_packet(
     latest_motion = _latest_motion_video(candidate_dir / "evaluations")
     reference_diagnostics, reference_diagnostic_video = _reference_diagnostics(analysis_file)
     reference_edge_diagnostics = _reference_edge_diagnostics(analysis_file)
+    reference_grid_density_diagnostics = _reference_grid_density_diagnostics(analysis_file)
     refinement_priority = _motion_refinement_priority(state)
     refinement_findings = _ranked_findings(state)
     packet_file = candidate_dir / "packets" / f"iteration_{next_iteration:03d}_packet.json"
@@ -501,6 +502,9 @@ def build_next_iteration_packet(
         "reference_diagnostics_file": str(reference_diagnostics) if reference_diagnostics else None,
         "reference_diagnostics_video": str(reference_diagnostic_video) if reference_diagnostic_video else None,
         "reference_edge_diagnostics_file": str(reference_edge_diagnostics) if reference_edge_diagnostics else None,
+        "reference_grid_density_diagnostics_file": (
+            str(reference_grid_density_diagnostics) if reference_grid_density_diagnostics else None
+        ),
         "refinement_priority": refinement_priority,
         # Every over-threshold signal, not only the winner: a lower-ranked entry
         # can still be the real defect when thresholds across different units are
@@ -1995,6 +1999,11 @@ def _reference_edge_diagnostics(analysis_file: Path) -> Path | None:
     return diagnostics_file if diagnostics_file.is_file() else None
 
 
+def _reference_grid_density_diagnostics(analysis_file: Path) -> Path | None:
+    diagnostics_file = analysis_file.parent.parent / "diagnostics" / "grid_density_diagnostics.json"
+    return diagnostics_file if diagnostics_file.is_file() else None
+
+
 def _motion_refinement_priority(state: dict[str, Any]) -> dict[str, Any]:
     """Prioritize motion geometry only when its diagnostics are reliable."""
     scored = [
@@ -2210,6 +2219,7 @@ def _refinement_request(packet: dict[str, Any], candidate_dir: Path) -> str:
 - {packet['reference_diagnostics_file'] or 'no reference motion diagnostics'}
 - {packet['reference_diagnostics_video'] or 'no reference motion diagnostic video'}
 - {packet['reference_edge_diagnostics_file'] or 'no reference edge-content diagnostics'}
+- {packet.get('reference_grid_density_diagnostics_file') or 'no reference grid-density diagnostics'}
 
 Edit only:
 {candidate_dir}

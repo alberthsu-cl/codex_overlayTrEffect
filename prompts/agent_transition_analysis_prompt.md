@@ -23,6 +23,9 @@ Primary input:
 - optional prepared reference frames if they already exist
 - optional `reference_motion_diagnostics.json` and its diagnostic MP4, created
   locally from the prepared reference frames
+- optional `grid_density_diagnostics.json`, a deterministic measurement of a
+  masked-grid transition's cell density (column/row counts), created locally
+  when a prepared source_b is available
 
 Output rules:
 - write exactly one JSON object that conforms to the supplied schema
@@ -115,6 +118,16 @@ When reference motion diagnostics are provided, use them to check region count,
 per-region motion direction, approximate motion strength, onset/peak/settling,
 and low-confidence blur or occlusion areas. Do not assume a fixed number of
 regions from the diagnostic output.
+
+When `grid_density_diagnostics.json` is provided and its `status` is
+`"estimated"`, cite its measured `estimated_columns`/`estimated_rows` in
+`split_geometry` rather than describing the grid only qualitatively - a
+measured density is comparable across samples of the same effect family in a
+way "a rectangular grid" is not. When its `status` is `"low_confidence"` or
+`"not_applicable"`, do not report a specific column/row count; say the count
+could not be reliably measured rather than guessing one. Dense photographic
+texture can defeat this measurement even when a real grid is visible by eye -
+prefer "could not be measured" over a confident-sounding wrong number.
 
 Timing boundary:
 - Report timing only for the reference sample video: its stable A/B boundaries,

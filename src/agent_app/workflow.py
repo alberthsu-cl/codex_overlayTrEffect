@@ -262,6 +262,30 @@ def analyze_reference_diagnostics(
     edge_output_file = output_dir / "edge_content_diagnostics.json"
     write_json(edge_output_file, edge_policy)
     result["edge_content_policy"] = edge_policy
+
+    source_b_directory = reference.parent / "sources" / "source_b"
+    grid_density_analyzer = modules.get("analyze_grid_density")
+    grid_density = (
+        grid_density_analyzer(
+            reference=reference,
+            source_b_directory=source_b_directory,
+            width=width,
+            height=height,
+            frame_start=frame_start,
+            frame_end=frame_end,
+            ffmpeg_path=ffmpeg_path,
+        )
+        if grid_density_analyzer is not None and source_b_directory.is_dir()
+        else {
+            "artifact_type": "grid_density_diagnostics",
+            "status": "not_applicable",
+            "reason": "a prepared source_b directory is not available beside the reference",
+        }
+    )
+    grid_density_output_file = output_dir / "grid_density_diagnostics.json"
+    write_json(grid_density_output_file, grid_density)
+    result["grid_density"] = grid_density
+
     output_file = output_dir / "reference_motion_diagnostics.json"
     write_json(output_file, result)
     return {
@@ -269,6 +293,7 @@ def analyze_reference_diagnostics(
         "diagnostics": result,
         "output_file": str(output_file),
         "edge_output_file": str(edge_output_file),
+        "grid_density_output_file": str(grid_density_output_file),
     }
 
 
@@ -283,8 +308,10 @@ def ensure_reference_diagnostics(
     output_dir = reference.resolve().parent / "diagnostics"
     diagnostics_file = output_dir / "reference_motion_diagnostics.json"
     edge_diagnostics_file = output_dir / "edge_content_diagnostics.json"
+    grid_density_diagnostics_file = output_dir / "grid_density_diagnostics.json"
     source_directories = [reference.parent / "sources" / "source_a", reference.parent / "sources" / "source_b"]
     needs_edge_diagnostics = any(directory.is_dir() for directory in source_directories)
+    needs_grid_density_diagnostics = (reference.parent / "sources" / "source_b").is_dir()
     if diagnostics_file.is_file():
         try:
             payload = load_json(diagnostics_file)
@@ -298,12 +325,16 @@ def ensure_reference_diagnostics(
                 and isinstance(payload["summary"].get("angular_motion"), dict)
                 and isinstance(payload["summary"].get("angular_motion_phases"), list)
                 and (not needs_edge_diagnostics or edge_diagnostics_file.is_file())
+                and (not needs_grid_density_diagnostics or grid_density_diagnostics_file.is_file())
             ):
                 return {
                     "status": "ready",
                     "regenerated": False,
                     "output_file": str(diagnostics_file),
                     "edge_output_file": str(edge_diagnostics_file) if edge_diagnostics_file.is_file() else None,
+                    "grid_density_output_file": (
+                        str(grid_density_diagnostics_file) if grid_density_diagnostics_file.is_file() else None
+                    ),
                 }
         except (OSError, ValueError):
             pass
@@ -321,6 +352,7 @@ def ensure_reference_diagnostics(
         "regenerated": True,
         "output_file": result["output_file"],
         "edge_output_file": result.get("edge_output_file"),
+        "grid_density_output_file": result.get("grid_density_output_file"),
     }
 
 
