@@ -459,6 +459,17 @@ def build_next_iteration_packet(
     reference_diagnostics, reference_diagnostic_video = _reference_diagnostics(analysis_file)
     reference_edge_diagnostics = _reference_edge_diagnostics(analysis_file)
     reference_grid_density_diagnostics = _reference_grid_density_diagnostics(analysis_file)
+    primary_grid_density_status = None
+    if reference_grid_density_diagnostics is not None:
+        try:
+            primary_grid_density_status = load_json(reference_grid_density_diagnostics).get("status")
+        except (OSError, ValueError):
+            primary_grid_density_status = None
+    secondary_grid_density_diagnostics = (
+        _secondary_grid_density_diagnostics(analysis_file, candidate_manifest_file)
+        if primary_grid_density_status != "estimated"
+        else []
+    )
     refinement_priority = _motion_refinement_priority(state)
     refinement_findings = _ranked_findings(state)
     packet_file = candidate_dir / "packets" / f"iteration_{next_iteration:03d}_packet.json"
@@ -505,6 +516,7 @@ def build_next_iteration_packet(
         "reference_grid_density_diagnostics_file": (
             str(reference_grid_density_diagnostics) if reference_grid_density_diagnostics else None
         ),
+        "secondary_grid_density_diagnostics": secondary_grid_density_diagnostics or None,
         "refinement_priority": refinement_priority,
         # Every over-threshold signal, not only the winner: a lower-ranked entry
         # can still be the real defect when thresholds across different units are
@@ -2004,6 +2016,83 @@ def _reference_grid_density_diagnostics(analysis_file: Path) -> Path | None:
     return diagnostics_file if diagnostics_file.is_file() else None
 
 
+def _secondary_grid_density_diagnostics(
+    analysis_file: Path, candidate_manifest_file: Path
+) -> list[dict[str, Any]]:
+    """Advisory grid-density measurements from regression secondaries of this candidate.
+
+    A candidate's own sample can be photographic and defeat grid-density
+    measurement even when the effect clearly has a grid. When a sibling sample
+    was set up as a regression secondary for this same FX ID (an
+    `<fx_name>_regression_job.json` under its own `jobs/`) and its own
+    grid-density diagnostic came back confidently `estimated`, surface that
+    here as advisory context - never as this sample's own measured count,
+    since a different sample's grid is not guaranteed to match this one's.
+    """
+    sample_dir = analysis_file.parent.parent
+    samples_root = sample_dir.parent
+    fx_name = candidate_manifest_file.parent.name
+    if not samples_root.is_dir():
+        return []
+    findings = []
+    for sibling_dir in sorted(samples_root.iterdir()):
+        if not sibling_dir.is_dir() or sibling_dir == sample_dir:
+            continue
+        regression_job = sibling_dir / "jobs" / f"{fx_name}_regression_job.json"
+        if not regression_job.is_file():
+            continue
+        diagnostics_file = sibling_dir / "diagnostics" / "grid_density_diagnostics.json"
+        if not diagnostics_file.is_file():
+            continue
+        try:
+            diagnostics = load_json(diagnostics_file)
+        except (OSError, ValueError):
+            continue
+        if not isinstance(diagnostics, dict) or diagnostics.get("status") != "estimated":
+            continue
+        findings.append(
+            {
+                "sample": sibling_dir.name,
+                "status": diagnostics.get("status"),
+                "estimated_columns": diagnostics.get("estimated_columns"),
+                "estimated_rows": diagnostics.get("estimated_rows"),
+                "confidence": diagnostics.get("confidence"),
+            }
+        )
+    return findings
+
+
+def _secondary_grid_density_instruction(packet: dict[str, Any]) -> str:
+    findings = packet.get("secondary_grid_density_diagnostics")
+    if not isinstance(findings, list) or not findings:
+        return ""
+    parts = []
+    for item in findings:
+        if not isinstance(item, dict):
+            continue
+        columns = item.get("estimated_columns")
+        rows = item.get("estimated_rows")
+        confidence = item.get("confidence")
+        columns_text = f"{columns:.1f}" if isinstance(columns, (int, float)) else "?"
+        rows_text = f"{rows:.1f}" if isinstance(rows, (int, float)) else "?"
+        confidence_text = f"{confidence:.2f}" if isinstance(confidence, (int, float)) else "?"
+        parts.append(
+            f"`{item.get('sample')}` measured {columns_text}x{rows_text} columns/rows "
+            f"(confidence {confidence_text})"
+        )
+    if not parts:
+        return ""
+    return (
+        "\nSecondary-sample grid-density note: this sample's own reference grid density could not be "
+        "confidently measured, but a regression secondary sharing this FX ID could: "
+        + "; ".join(parts)
+        + ". Treat this as evidence the effect's grid density is measurable and roughly what scale to "
+        "expect, not as this sample's actual grid count - a different sample's grid is not guaranteed to "
+        "match this one's. Prefer a direct visual count of this sample's own reference frames over copying "
+        "a secondary's number outright.\n"
+    )
+
+
 def _motion_refinement_priority(state: dict[str, Any]) -> dict[str, Any]:
     """Prioritize motion geometry only when its diagnostics are reliable."""
     scored = [
@@ -2229,6 +2318,7 @@ Refine {packet['effect_id']} for iteration {packet['iteration']}.
 {_refinement_priority_instruction(packet.get('refinement_priority'), Path(packet['analysis_file']) if packet.get('analysis_file') else None)}
 {_findings_instruction(packet.get('refinement_findings'))}
 {_reference_curve_instruction(packet.get('reference_curves'))}
+{_secondary_grid_density_instruction(packet)}
 {_escalation_instruction(packet.get('escalation'))}
 Choose exactly one hypothesis category from: {allowed}.
 Do not repeat a rejected category unless you provide new visual evidence.
