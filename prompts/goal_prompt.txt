@@ -5,11 +5,12 @@ Build and refine one new transition shader from this sample video:
 Sample video:
 D:\PATH\TO\YOUR\NEW_SAMPLE.mp4
 
-Sample ID:
-YOUR_NEW_SAMPLE_ID
+Sample ID (lowercase only - must match [a-z0-9][a-z0-9_-]*, so an uppercase
+or space-separated ID is rejected at step 1):
+your_new_sample_id
 
 Work only under:
-D:\AI_Harness\agent\work\samples\YOUR_NEW_SAMPLE_ID
+D:\AI_Harness\agent\work\samples\your_new_sample_id
 
 Goal:
 Create one new ModelGenerated FX ID, establish a valid calibrated baseline, then
@@ -41,8 +42,22 @@ Process:
    - current registered OverlayTrEngine effects
 
    Delivery policy: this sample must produce a new shader deliverable. Assign a
-   unique ModelGenerated\Family_XX FX ID. Existing effects may be cloned only
-   as a starting point; do not modify them.
+   unique ModelGenerated\Family_XX FX ID, and choose the starting point
+   explicitly between the two available actions:
+
+   - implement_new_effect starts from the neutral scaffold, ModelGenerated/
+     TrGeneratedDissolve: a plain linear crossfade with a wrapper that passes
+     progress through unmodified, carrying no inherited geometry or timing.
+   - tune_existing_effect clones a registered effect, builtin or generated, as
+     a starting point only; never modify the effect it clones. Prefer this only
+     when a registered effect already implements most of the required motion,
+     and say in decision.reason what it actually supplies.
+
+   A cloned seed carries its timing as well as its pixel logic. Before relying
+   on one, check that its UpdatePSParam passes progress through linearly - some
+   effects remap it to a narrow band around the transition midpoint, which makes
+   the shader look broken for most of its progress range. The scaffold is the
+   safe default when in doubt.
 
 6. Build the render job. Generate the effect seed, register it, and initialize
    its isolated candidate workspace. Derive the effect folder name from
@@ -72,6 +87,31 @@ Process:
    `candidate-continue` is mandatory after every completed evaluation unless
    the phase is exhausted, blocked, or a build/evaluation failure requires the
    generated repair request.
+
+   Pinned-schedule rule: refine against a fixed progress schedule, not a
+   recalibrated one. --calibrate-progress re-probes the candidate on every run
+   to find the frames distinct from both endpoints, then maps the reference
+   window onto that band. Any change to an effect's temporal profile - a longer
+   tail, a slower relaxation, an earlier onset - moves what the probe finds and
+   silently re-times the content, so the score then reports content
+   misalignment rather than the change that was made. One measured instance:
+   extending a stretch tail moved the probe's band end from 0.85 to 0.98 and
+   the iteration read as a regression for that reason alone.
+
+   Once the step 7 baseline is accepted, pin it:
+   - read reports/progress_calibration.json from the baseline run and copy the
+     aligned_evaluation_job.json it names to a stable path under the sample's
+     jobs/ folder, and shorten its job_name field - that name is embedded in
+     every evaluation output path, and Windows still caps paths at 260
+     characters, which a generated job_name has already exceeded;
+   - run every refinement evaluation with --job pointing at that pinned file
+     and WITHOUT --calibrate-progress;
+   - confirm the pin is faithful by re-evaluating the unchanged baseline under
+     it once; the metrics must reproduce the baseline's. If they do not, the
+     pin is wrong - fix it before spending an iteration.
+
+   Re-derive a measurement only against the pinned schedule. A curve fitted
+   under one mapping is invalid under another.
 
    Motion-first rule: when reliable motion coverage is high but direction
    agreement is weak, investigate regions or displacement before blur or

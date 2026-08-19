@@ -6,6 +6,9 @@ D:\AI_Harness\agent\work\samples\ACTUAL_SAMPLE_ID\candidates\ACTUAL_EFFECT_NAME
 
 Run at most six additional evaluated iterations. Do not create another FX ID.
 
+Resolve every <candidate-root> and <sample-root> below to an actual path before
+running anything; never pass a literal documentation placeholder.
+
 1. Inspect the current controller state first:
 
    ```powershell
@@ -26,7 +29,7 @@ Run at most six additional evaluated iterations. Do not create another FX ID.
      --manifest "<candidate-root>\candidate_manifest.json" `
      --analysis "<sample-root>\analysis\transition_structure.json" `
      --design "<sample-root>\design\effect_design.json" `
-     --phase shader_refinement_01`
+     --phase shader_refinement_01 `
      --max-iterations 6 `
      --max-rejected 3
    ```
@@ -40,7 +43,7 @@ Run at most six additional evaluated iterations. Do not create another FX ID.
    - Run the embedded `candidate-continue` command after `accepted`, `rejected`,
      or `tradeoff`, then follow the next request.
    - Continue this same request/evaluate/continue sequence until the configured
-   budget is exhausted or a stated stop condition occurs.
+     budget is exhausted or a stated stop condition occurs.
 
 An `accepted`, `rejected`, or `tradeoff` score is a completed evaluation, not
 an evaluation failure. Progress calibration and its linear probe are normal.
@@ -50,6 +53,28 @@ evaluation as failed only when `candidate-evaluate` itself fails without a
 controller outcome.
 3. Stop after the configured additional evaluations, or on a build failure,
    evaluation failure, controller block, or exhausted phase budget.
+
+Refine against a fixed progress schedule, not a recalibrated one.
+--calibrate-progress re-probes the candidate on every run for the frames
+distinct from both endpoints, then maps the reference window onto that band, so
+any change to the effect's temporal profile - a longer tail, a slower
+relaxation, an earlier onset - moves what the probe finds and silently re-times
+the content. The score then reports content misalignment rather than the change
+that was made, and the iteration is spent. One measured instance: extending a
+stretch tail moved the band end from 0.85 to 0.98 and read as a regression for
+that reason alone.
+
+If this sample already has a pinned evaluation job under its jobs/ folder, run
+every evaluation with --job pointing at it and WITHOUT --calibrate-progress. If
+it does not, create one before the first iteration: read
+reports/progress_calibration.json from the run that established the current
+baseline, copy the aligned_evaluation_job.json it names into the sample's jobs/
+folder, shorten its job_name field so evaluation output paths stay under the
+260-character Windows limit, and confirm the pin reproduces the baseline's
+metrics on one unchanged re-evaluation before spending an iteration on it.
+
+A measurement fitted under one schedule is invalid under another; re-derive any
+curve against the pinned one.
 
 Keep endpoint behavior, the existing FX ID, and the candidate boundary intact.
 When reliable motion coverage is high but direction agreement is weak, prioritize
