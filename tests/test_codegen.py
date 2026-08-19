@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import json
+import shutil
 import sys
 import tempfile
 import uuid
@@ -13,9 +14,49 @@ if str(AGENT_SRC) not in sys.path:
     sys.path.insert(0, str(AGENT_SRC))
 
 from agent_app.codegen import generate_effect, initialize_candidate, promote_candidate, register_effect
+from agent_app.codegen import _resolve_variant_template_path
 
 
 class CodegenTests(unittest.TestCase):
+
+    def test_neutral_scaffold_templates_are_present(self) -> None:
+        """implement_new_effect is unusable without its three template files."""
+        plugin = Path(__file__).resolve().parents[2] / "overlaytrengine" / "OverlayTrPlugInFx"
+        if not plugin.is_dir():
+            self.skipTest("overlaytrengine plugin project is not available")
+        for name in (
+            "TrGeneratedDissolve.h",
+            "TrGeneratedDissolve.cpp",
+            "TrGeneratedDissolve_ps.hlsl",
+        ):
+            resolved = _resolve_variant_template_path(plugin, name)
+            self.assertTrue(resolved.exists(), f"missing scaffold template: {name}")
+
+
+    def test_resolve_variant_template_path_finds_model_generated_subfolder(self) -> None:
+        """Bare, repo-relative and subfolder-qualified names must all resolve."""
+        root = Path(tempfile.mkdtemp())
+        try:
+            plugin_dir = root / "overlaytrengine" / "OverlayTrPlugInFx"
+            model_dir = plugin_dir / "ModelGenerated"
+            model_dir.mkdir(parents=True)
+            target = model_dir / "TrModelGeneratedThing01_ps.hlsl"
+            target.write_text("shader", encoding="utf-8")
+
+            for name in (
+                "TrModelGeneratedThing01_ps.hlsl",
+                "ModelGenerated/TrModelGeneratedThing01_ps.hlsl",
+                "overlaytrengine/OverlayTrPlugInFx/TrModelGeneratedThing01_ps.hlsl",
+            ):
+                resolved = _resolve_variant_template_path(plugin_dir, name)
+                self.assertTrue(resolved.exists(), name)
+                self.assertEqual(resolved.resolve(), target.resolve(), name)
+
+            missing = _resolve_variant_template_path(plugin_dir, "TrNotThere_ps.hlsl")
+            self.assertFalse(missing.exists())
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
+
     def test_generate_dissolve_package(self) -> None:
         design = {
             "artifact_type": "effect_design",

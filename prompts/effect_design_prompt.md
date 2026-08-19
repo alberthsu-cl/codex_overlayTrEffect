@@ -55,7 +55,10 @@ New-effect delivery policy:
   before selecting the next index.
 - For `tune_existing_effect`, include `source_variant` with the base source
   stem, source file names relative to `overlaytrengine/OverlayTrPlugInFx`, and
-  only exact effect-specific initial replacements. Do not add replacements for
+  only exact effect-specific initial replacements. Generated effects live in
+  that project's `ModelGenerated/` subfolder, so a ModelGenerated base is
+  referenced as `ModelGenerated/TrModelGenerated<Family><NN>_ps.hlsl` and its
+  `.cpp` and `.h` alongside it. Do not add replacements for
   the base class/stem, shader symbol, or base FX ID; generation handles those
   names automatically.
 - `reuse_existing_effect` is permitted only when the request explicitly says

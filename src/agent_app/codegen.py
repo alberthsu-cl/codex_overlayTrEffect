@@ -57,7 +57,9 @@ def generate_effect(
 
     generated_files: list[str] = []
     for template_name in _TEMPLATE_FILES:
-        template_path = template_root / template_name
+        # Resolved the same way as source-variant templates, so the scaffold can
+        # live in the ModelGenerated subfolder alongside the effects it seeds.
+        template_path = _resolve_variant_template_path(template_root, template_name)
         if not template_path.exists():
             raise FileNotFoundError(f"effect template not found: {template_path}")
 
@@ -246,6 +248,14 @@ def _resolve_variant_template_path(template_root: Path, source_name: str) -> Pat
         repo_relative_path = template_root.joinpath(*parts[index + 1 :])
         if repo_relative_path.exists():
             return repo_relative_path
+
+    # Generated effect sources live in a subfolder of the project, so a bare
+    # file name - or a repo-relative path that stops at the project root - no
+    # longer resolves on its own. Fall back to the subfolder before giving up,
+    # which keeps design artifacts written against the old flat layout working.
+    subfolder_path = template_root / _MODEL_SUBDIR / relative_path.name
+    if subfolder_path.exists():
+        return subfolder_path
     return direct_path
 
 
