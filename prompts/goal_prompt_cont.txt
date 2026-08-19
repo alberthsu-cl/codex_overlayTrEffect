@@ -6,8 +6,10 @@ D:\AI_Harness\agent\work\samples\ACTUAL_SAMPLE_ID\candidates\ACTUAL_EFFECT_NAME
 
 Run at most six additional evaluated iterations. Do not create another FX ID.
 
-Resolve every <candidate-root> and <sample-root> below to an actual path before
-running anything; never pass a literal documentation placeholder.
+First read agent/prompts/goal_rules.md and follow it throughout, in particular
+the pinned progress schedule and the rules for interpreting outcomes and for
+deciding what to fix first. Resolve every <candidate-root> and <sample-root>
+below to an actual path; never pass a literal placeholder.
 
 1. Inspect the current controller state first:
 
@@ -35,57 +37,26 @@ running anything; never pass a literal documentation placeholder.
    ```
 
    `candidate-resume` only prepares the first request. Do not stop there.
-2. For each generated request:
-   - Read the newest `iteration_NNN_agent_request.md` in the candidate packet folder.
+
+2. Use the sample's pinned evaluation job for every evaluation, without
+   --calibrate-progress. If the sample has none yet, create and verify one from
+   the run that established the current baseline, per goal_rules.md, before
+   spending an iteration.
+
+3. For each generated request:
+   - Read the newest `iteration_NNN_agent_request.md` in the candidate packet.
    - Edit only the candidate workspace in the current agent session.
    - Run the embedded `candidate-evaluate` command.
    - Read the controller outcome.
    - Run the embedded `candidate-continue` command after `accepted`, `rejected`,
      or `tradeoff`, then follow the next request.
-   - Continue this same request/evaluate/continue sequence until the configured
+   - Continue this request/evaluate/continue sequence until the configured
      budget is exhausted or a stated stop condition occurs.
 
-An `accepted`, `rejected`, or `tradeoff` score is a completed evaluation, not
-an evaluation failure. Progress calibration and its linear probe are normal.
-Do not stop, restore sources manually, or start a new phase after those
-outcomes; immediately run the embedded `candidate-continue` command. Treat an
-evaluation as failed only when `candidate-evaluate` itself fails without a
-controller outcome.
-3. Stop after the configured additional evaluations, or on a build failure,
+4. Stop after the configured additional evaluations, or on a build failure,
    evaluation failure, controller block, or exhausted phase budget.
 
-Refine against a fixed progress schedule, not a recalibrated one.
---calibrate-progress re-probes the candidate on every run for the frames
-distinct from both endpoints, then maps the reference window onto that band, so
-any change to the effect's temporal profile - a longer tail, a slower
-relaxation, an earlier onset - moves what the probe finds and silently re-times
-the content. The score then reports content misalignment rather than the change
-that was made, and the iteration is spent. One measured instance: extending a
-stretch tail moved the band end from 0.85 to 0.98 and read as a regression for
-that reason alone.
-
-If this sample already has a pinned evaluation job under its jobs/ folder, run
-every evaluation with --job pointing at it and WITHOUT --calibrate-progress. If
-it does not, create one before the first iteration: read
-reports/progress_calibration.json from the run that established the current
-baseline, copy the aligned_evaluation_job.json it names into the sample's jobs/
-folder, shorten its job_name field so evaluation output paths stay under the
-260-character Windows limit, and confirm the pin reproduces the baseline's
-metrics on one unchanged re-evaluation before spending an iteration on it.
-
-A measurement fitted under one schedule is invalid under another; re-derive any
-curve against the pinned one.
-
 Keep endpoint behavior, the existing FX ID, and the candidate boundary intact.
-When reliable motion coverage is high but direction agreement is weak, prioritize
-regions or displacement before blur or blend.
-
-For transform-like effects, read `motion_geometry` in every iteration report.
-Treat translation, pivot, rotation-sign, scale, and reflection mismatches as
-source-code geometry problems. When position or pivot is wrong, prioritize
-`displacement` or `shader_structure`; do not spend the iteration on timing,
-blur, or blend. Timing is appropriate only after the transform position and
-direction agree, or when geometry confidence is explicitly low.
 
 Report the selected baseline iteration, completed iteration numbers, final
 controller status, and final comparison-video path.
