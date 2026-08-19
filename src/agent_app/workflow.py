@@ -1748,7 +1748,18 @@ def evaluate_candidate(
         shutil.copyfile(target_path, backup_path)
         backups.append((target_path, backup_path))
 
+    # Registered effect sources live in a ModelGenerated/ subfolder of the plugin
+    # project, so the project directory is not simply the file's parent. Walk up
+    # to whichever ancestor actually holds the vcxproj.
     target_dir = target_files[0].parent
+    for parent in (target_dir, *target_dir.parents):
+        if (parent / "OverlayTrPlugInFx.vcxproj").exists():
+            target_dir = parent
+            break
+    else:
+        raise FileNotFoundError(
+            "could not locate OverlayTrPlugInFx.vcxproj above the registered effect sources"
+        )
     target_root = target_dir.parent
     dll_path = target_root / "x64" / configuration / "OverlayTrPlugInFx.dll"
     build_dll_path = target_dir / "x64" / configuration / "OverlayTrPlugInFx.dll"

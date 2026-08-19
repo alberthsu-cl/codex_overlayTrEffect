@@ -84,14 +84,14 @@ class CodegenTests(unittest.TestCase):
         plugin_dir.mkdir(parents=True)
         try:
             (plugin_dir / "FxInfo.h").write_text(
-                '#include "TrGeneratedDissolve.h"\nnamespace PlugInFxInfo {\n\tstatic FxInfo g_FxInfoList[] =\n\t{\n\t\t{\n\t\t\t"Existing",\n\t\t\t"Existing",\n\t\t\t22\n\t\t}\n\t};\n}\n',
+                '#include "ModelGenerated/TrGeneratedDissolve.h"\nnamespace PlugInFxInfo {\n\tstatic FxInfo g_FxInfoList[] =\n\t{\n\t\t{\n\t\t\t"Existing",\n\t\t\t"Existing",\n\t\t\t22\n\t\t}\n\t};\n}\n',
                 encoding="utf-8",
             )
             (plugin_dir / "OverlayTrPlugInFx.cpp").write_text("\t\tdefault:\n", encoding="utf-8")
             (plugin_dir / "OverlayTrPlugInFx.vcxproj").write_text(
-                '    <ClCompile Include="TrGeneratedDissolve.cpp" />\n'
-                '    <ClInclude Include="TrGeneratedDissolve.h" />\n'
-                '    <FxCompile Include="TrGeneratedDissolve_ps.hlsl">\n'
+                '    <ClCompile Include="ModelGenerated\\TrGeneratedDissolve.cpp" />\n'
+                '    <ClInclude Include="ModelGenerated\\TrGeneratedDissolve.h" />\n'
+                '    <FxCompile Include="ModelGenerated\\TrGeneratedDissolve_ps.hlsl">\n'
                 '    </FxCompile>\n',
                 encoding="utf-8",
             )
@@ -113,7 +113,17 @@ class CodegenTests(unittest.TestCase):
             self.assertEqual(registration["index"], 23)
             self.assertIn("ModelGenerated\\\\Dissolve_02", (plugin_dir / "FxInfo.h").read_text())
             self.assertIn("CTrModelGeneratedDissolve02", (plugin_dir / "OverlayTrPlugInFx.cpp").read_text())
-            self.assertTrue((plugin_dir / "TrModelGeneratedDissolve02.cpp").exists())
+            self.assertTrue(
+                (plugin_dir / "ModelGenerated" / "TrModelGeneratedDissolve02.cpp").exists()
+            )
+            self.assertIn(
+                'Include="ModelGenerated\\TrModelGeneratedDissolve02.cpp"',
+                (plugin_dir / "OverlayTrPlugInFx.vcxproj").read_text(),
+            )
+            self.assertIn(
+                '#include "ModelGenerated/TrModelGeneratedDissolve02.h"',
+                (plugin_dir / "FxInfo.h").read_text(),
+            )
         finally:
             for path in sorted(root.rglob("*"), reverse=True):
                 if path.is_file():

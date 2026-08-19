@@ -9,6 +9,8 @@ from .artifacts import validate_effect_design
 from .io import load_json, write_json
 
 
+_MODEL_SUBDIR = "ModelGenerated"
+_MODEL_PREFIX = _MODEL_SUBDIR + '\\'
 _MODEL_ID = re.compile(r"^ModelGenerated\\([A-Za-z][A-Za-z0-9]*)_(\d{2})$")
 _TEMPLATE_FILES = (
     "TrGeneratedDissolve.h",
@@ -277,6 +279,9 @@ def register_effect(manifest_file: Path, target_root: Path) -> dict[str, Any]:
         raise ValueError("registration supports effect IDs matching ModelGenerated\\Family_XX")
 
     target_dir = target_root / "OverlayTrPlugInFx"
+    # Generated effect sources live in their own folder inside the project so
+    # they are a real directory rather than only a Solution Explorer filter.
+    model_dir = target_dir / _MODEL_SUBDIR
     fx_info_path = target_dir / "FxInfo.h"
     plugin_path = target_dir / "OverlayTrPlugInFx.cpp"
     project_path = target_dir / "OverlayTrPlugInFx.vcxproj"
@@ -292,7 +297,7 @@ def register_effect(manifest_file: Path, target_root: Path) -> dict[str, Any]:
     class_name = manifest.get("class_name") or f"CTr{symbol}"
     shader_symbol = manifest.get("shader_symbol") or f"g_Tr_{symbol}_PS"
     base_stem = manifest.get("base_stem") or "TrGeneratedDissolve"
-    destination_paths = [target_dir / path.name for path in source_paths]
+    destination_paths = [model_dir / path.name for path in source_paths]
     raw_target_text = {
         fx_info_path: _read_text_preserving_newlines(fx_info_path),
         plugin_path: _read_text_preserving_newlines(plugin_path),
@@ -312,12 +317,12 @@ def register_effect(manifest_file: Path, target_root: Path) -> dict[str, Any]:
     if class_name in target_text[plugin_path] or shader_symbol in target_text[project_path]:
         raise ValueError("generated class or shader symbol is already present")
 
-    include_anchor = f'#include "{base_stem}.h"'
+    include_anchor = f'#include "{_MODEL_SUBDIR}/{base_stem}.h"'
     fx_info_anchor = "\t};\n}"
     switch_anchor = "\t\tdefault:\n"
-    project_compile_anchor = f'    <ClCompile Include="{base_stem}.cpp" />'
-    project_include_anchor = f'    <ClInclude Include="{base_stem}.h" />'
-    project_shader_anchor = f'    <FxCompile Include="{base_stem}_ps.hlsl">'
+    project_compile_anchor = f'    <ClCompile Include="{_MODEL_PREFIX}{base_stem}.cpp" />'
+    project_include_anchor = f'    <ClInclude Include="{_MODEL_PREFIX}{base_stem}.h" />'
+    project_shader_anchor = f'    <FxCompile Include="{_MODEL_PREFIX}{base_stem}_ps.hlsl">'
     for path, anchor in (
         (fx_info_path, include_anchor),
         (fx_info_path, fx_info_anchor),
@@ -338,11 +343,11 @@ def register_effect(manifest_file: Path, target_root: Path) -> dict[str, Any]:
         "\t\t}\n"
     )
     case = f"\t\tcase {index}:\n\t\t\tm_pFx = new {class_name}(g_hInst, pFxParam->wszReferencePath);\n\t\t\tbreak;\n"
-    shader_entry = _shader_project_entry(f"Tr{symbol}_ps.hlsl", shader_symbol)
+    shader_entry = _shader_project_entry(f"{_MODEL_PREFIX}Tr{symbol}_ps.hlsl", shader_symbol)
 
     updated = dict(target_text)
     fx_info_with_include = updated[fx_info_path].replace(
-        include_anchor, f'{include_anchor}\n#include "Tr{symbol}.h"', 1
+        include_anchor, f'{include_anchor}\n#include "{_MODEL_SUBDIR}/Tr{symbol}.h"', 1
     )
     fx_info_prefix, fx_info_suffix = fx_info_with_include.split(fx_info_anchor, 1)
     if not fx_info_prefix.rstrip().endswith("},"):
@@ -358,23 +363,24 @@ def register_effect(manifest_file: Path, target_root: Path) -> dict[str, Any]:
     updated[plugin_path] = updated[plugin_path].replace(switch_anchor, case + switch_anchor, 1)
     updated[project_path] = updated[project_path].replace(
         project_compile_anchor,
-        f'{project_compile_anchor}\n    <ClCompile Include="Tr{symbol}.cpp" />',
+        f'{project_compile_anchor}\n    <ClCompile Include="{_MODEL_PREFIX}Tr{symbol}.cpp" />',
         1,
     ).replace(
         project_include_anchor,
-        f'{project_include_anchor}\n    <ClInclude Include="Tr{symbol}.h" />',
+        f'{project_include_anchor}\n    <ClInclude Include="{_MODEL_PREFIX}Tr{symbol}.h" />',
         1,
     ).replace(project_shader_anchor, shader_entry + "\n" + project_shader_anchor, 1)
 
     if filters_path in updated:
         updated[filters_path] = _update_project_filters(
             updated[filters_path],
-            base_stem=base_stem,
-            cpp_filename=f"Tr{symbol}.cpp",
-            header_filename=f"Tr{symbol}.h",
-            shader_filename=f"Tr{symbol}_ps.hlsl",
+            base_stem=f"{_MODEL_PREFIX}{base_stem}",
+            cpp_filename=f"{_MODEL_PREFIX}Tr{symbol}.cpp",
+            header_filename=f"{_MODEL_PREFIX}Tr{symbol}.h",
+            shader_filename=f"{_MODEL_PREFIX}Tr{symbol}_ps.hlsl",
         )
 
+    model_dir.mkdir(parents=True, exist_ok=True)
     for source, destination in zip(source_paths, destination_paths):
         shutil.copyfile(source, destination)
     for path, content in updated.items():
