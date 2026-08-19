@@ -336,7 +336,11 @@ def register_effect(manifest_file: Path, target_root: Path) -> dict[str, Any]:
 
     fx_info_entry = (
         "\t\t{\n"
-        f"\t\t\t// Agent-generated {match.group(1)} effect\n"
+        # The harness attaches an effect's own sources to its catalog entry only
+        # when this comment names the wrapper, matching the builtin convention of
+        # a leading Tr* token. Without it the effect is retrievable by its display
+        # name alone and its shader is invisible to reuse matching.
+        f"\t\t\t// Tr{symbol} - agent-generated {match.group(1)} effect\n"
         f'\t\t\t"{cpp_effect_id}",\n'
         f'\t\t\t"Generated {match.group(1)} {match.group(2)}",\n'
         f"\t\t\t{index}\n"
