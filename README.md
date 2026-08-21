@@ -333,6 +333,11 @@ the same `artifacts` directory:
 - `comparison_side_by_side.mp4`
 - `comparison_transition_window.mp4`
 
+In both comparison videos the **reference is the left panel and the candidate is
+the right**. Videos produced before this convention was fixed have the opposite
+order and were not regenerated, so check the date before trusting the side of an
+older artifact.
+
 The score report also includes `transition_diagnostics` with the five worst MSE
 frames and five lowest-SSIM frames in the configured transition window.
 

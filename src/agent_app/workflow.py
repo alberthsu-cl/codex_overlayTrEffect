@@ -740,10 +740,13 @@ def _comparison_command(
     frame_count: int | None,
     output_file: Path,
 ) -> list[str]:
+    # Reference on the LEFT, candidate on the RIGHT. The reference is the first input, so
+    # hstack places it first. This was the other way round until now; comparison videos
+    # produced before the change keep the old order and are not regenerated.
     command = [
         "-y",
-        "-framerate", str(fps), "-start_number", str(start_number), "-i", str(artifacts_dir / "frame_%04d.png"),
         "-framerate", str(fps), "-start_number", str(start_number), "-i", str(reference_dir / "frame_%04d.png"),
+        "-framerate", str(fps), "-start_number", str(start_number), "-i", str(artifacts_dir / "frame_%04d.png"),
         "-filter_complex", "[0:v][1:v]hstack=inputs=2",
     ]
     if frame_count is not None:
